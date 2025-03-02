@@ -281,6 +281,16 @@ Apply complete! Resources: 5 added, 0 changed, 3 destroyed.
 
 ![resourcces_after_tf](https://github.com/user-attachments/assets/fad1ab54-f413-4432-8e7f-03b161153c1c)
 
+## Here is the Databricks service resource:
+
+![db_in_resource](https://github.com/user-attachments/assets/bae81798-ef15-43e8-86e0-1001ef5fb0e8)
+
+## Here is the actual Workspace:
+
+![kép](https://github.com/user-attachments/assets/128a53ba-5937-4b7b-ba91-51fbd1aca12e)
+
+
+
 
 
 
