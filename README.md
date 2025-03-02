@@ -289,6 +289,33 @@ Apply complete! Resources: 5 added, 0 changed, 3 destroyed.
 
 ![kép](https://github.com/user-attachments/assets/128a53ba-5937-4b7b-ba91-51fbd1aca12e)
 
+## I created an Access token, to being able to create a SecretScope in Databricks, where I can store my secrets:
+
+![access_token](https://github.com/user-attachments/assets/d250b3a8-6bbf-4b8a-b901-6a9f4696c200)
+
+## Then configured the token via CLI and created the actual secretscope:
+
+```python
+c:\data_eng\házi\2\m07_sparksql_python_azure-master\terraform>databricks configure --token
+Databricks Host (should begin with https://): https://adb-512.azuredatabricks.net/
+Token:
+
+c:\data_eng\házi\2\m07_sparksql_python_azure-master\terraform>
+c:\data_eng\házi\2\m07_sparksql_python_azure-master\terraform>databricks configure --token
+Databricks Host (should begin with https://): https://adb-512.8.azuredatabricks.net/
+Token:
+
+c:\data_eng\házi\2\m07_sparksql_python_azure-master\terraform>databricks configure --token
+Databricks Host (should begin with https://): https://adb-518.8.azuredatabricks.net/
+Token:
+
+c:\data_eng\házi\2\m07_sparksql_python_azure-master\terraform>databricks secrets create-scope --scope hw2secret --initial-manage-principal users
+
+c:\data_eng\házi\2\m07_sparksql_python_azure-master\terraform>databricks secrets list-scopes
+Scope      Backend     KeyVault URL
+---------  ----------  --------------
+hw2secret  DATABRICKS  N/A
+```
 
 
 
