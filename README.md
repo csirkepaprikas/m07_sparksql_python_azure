@@ -323,57 +323,66 @@ hw2secret  DATABRICKS  N/A
 
 ## I wrote a basic python and sql cell notebook:
 ```python
-input_storage_account = "homework2corvin"
-output_storage_account = "developmentwesteurope6o"
-input_container = "hw2"
-output_container = "data"
 #input_storage_account_key = dbutils.secrets.get(scope="hw2secret", key="AZURE_STORAGE_ACCOUNT_KEY_SOURCE")
 #output_storage_account_key = dbutils.secrets.get(scope="hw2secret", key="AZURE_STORAGE_ACCOUNT_KEY_DESTINATION")
 input_file_path = "data/input.csv"
 output_file_path = "data/output.csv"
 
 spark.conf.set(
-    "fs.azure.account.key.homework2corvin.dfs.core.windows.net",
+    f"fs.azure.account.key.{input_storage_account}.blob.core.windows.net",
     dbutils.secrets.get(scope="hw2secret", key="AZURE_STORAGE_ACCOUNT_KEY_SOURCE"))
 
 # Output Storage Account konfiguráció
 spark.conf.set(
-    "fs.azure.account.key.developmentwesteurope6o.dfs.core.windows.net",
+    f"fs.azure.account.key.{output_storage_account}.blob.core.windows.net",
     dbutils.secrets.get(scope="hw2secret", key="AZURE_STORAGE_ACCOUNT_KEY_DESTINATION")
 )
 #DB creation
 spark.sql("CREATE DATABASE IF NOT EXISTS mydatabase")
 
 #input expedia
-expedia_df = spark.read.format("avro").load("abfss://input_container@input_storage_account.dfs.core.windows.net/expedia/part-00024-ef2b800c-0702-462d-b37f-5f2fb3a093d0-c000.avro")
-expedia_df.write.format("delta").mode("overwrite").save("abfss://output_container@output_storage_account.dfs.core.windows.net/delta/expedia")
+expedia_df = spark.read.format("avro").load(f"wasbs://hw2@{input_storage_account}.blob.core.windows.net/expedia/")
+expedia_df.write.format("delta").mode("overwrite").option("mergeSchema", "true").save(f"wasbs://{output_container}@{output_storage_account}.blob.core.windows.net/delta/expedia")
 #delta table registration in DB metastore
 spark.sql("CREATE DATABASE IF NOT EXISTS mydatabase")
-spark.sql("""
+spark.sql("DROP TABLE IF EXISTS mydatabase.expedia")
+spark.sql(f"""
     CREATE TABLE IF NOT EXISTS mydatabase.expedia
     USING DELTA
-    LOCATION 'abfss://output_container@output_storage_account.dfs.core.windows.net/delta/expedia'
+    LOCATION 'wasbs://{output_container}@{output_storage_account}.blob.core.windows.net/delta/expedia/'
 """)
 
 #input hotel-weather
-hotel_weather_df = spark.read.format("avro").load("abfss://input_container@input_storage_account.dfs.core.windows.net/hotel-weather/year=2017/month=09/day=02/")
-hotel_weather_df.write.format("delta").mode("overwrite").save("abfss://output_container@output_storage_account.dfs.core.windows.net/data/hotel-weather/")
+hotel_weather_df = spark.read.format("parquet").load(f"wasbs://{input_container}@{input_storage_account}.blob.core.windows.net/hotel-weather/hotel-weather/year=2017/month=09/day=02/")
+hotel_weather_df.write.format("delta").mode("overwrite").option("overwriteSchema", "true").save(f"wasbs://{output_container}@{output_storage_account}.blob.core.windows.net/delta/hotel-weather/")
 #delta table registration in DB metastore
-spark.sql("CREATE DATABASE IF NOT EXISTS mydatabase")
-spark.sql("""
-    CREATE TABLE IF NOT EXISTS mydatabase.expedia
+spark.sql("DROP TABLE IF EXISTS mydatabase.hotel_weather")
+spark.sql(f"""
+    CREATE TABLE IF NOT EXISTS mydatabase.hotel_weather
     USING DELTA
-    LOCATION 'abfss://output_container@output_storage_account.dfs.core.windows.net/delta/expedia'
+    LOCATION 'wasbs://{output_container}@{output_storage_account}.blob.core.windows.net/delta/hotel-weather'
 """)
 ```
+
 ```python
 %sql
 SELECT * FROM mydatabase.expedia LIMIT 10;
 SELECT * FROM mydatabase.hotel_weather LIMIT 10;
 ```
+```python
+%sql
+SELECT * FROM mydatabase.hotel_weather LIMIT 10;
+```
+
 ## Created a simple Compute cluster resource too:
 
 ![simple_cluster](https://github.com/user-attachments/assets/c5024d60-75e3-44ff-8564-bee56763f166)
+
+## Here are the results:
+
+![gyak_1](https://github.com/user-attachments/assets/e6ef6040-c6e3-40fc-9384-049128e11546)
+
+![gyak2](https://github.com/user-attachments/assets/1225b32b-ba6b-40b6-9326-6106532d1766)
 
 
 
