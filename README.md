@@ -384,6 +384,60 @@ SELECT * FROM mydatabase.hotel_weather LIMIT 10;
 
 ![gyak2](https://github.com/user-attachments/assets/1225b32b-ba6b-40b6-9326-6106532d1766)
 
+## Then created the whole delta tables on the destination container:
+```python
+input_storage_account = "homework2corvin"
+output_storage_account = "developmentwesteurope6o"
+input_container = "hw2"
+output_container = "data"
+#input_storage_account_key = dbutils.secrets.get(scope="hw2secret", key="AZURE_STORAGE_ACCOUNT_KEY_SOURCE")
+#output_storage_account_key = dbutils.secrets.get(scope="hw2secret", key="AZURE_STORAGE_ACCOUNT_KEY_DESTINATION")
+input_file_path = "data/input.csv"
+output_file_path = "data/output.csv"
+
+spark.conf.set(
+    f"fs.azure.account.key.{input_storage_account}.blob.core.windows.net",
+    dbutils.secrets.get(scope="hw2secret", key="AZURE_STORAGE_ACCOUNT_KEY_SOURCE"))
+
+# Output Storage Account konfiguráció
+spark.conf.set(
+    f"fs.azure.account.key.{output_storage_account}.blob.core.windows.net",
+    dbutils.secrets.get(scope="hw2secret", key="AZURE_STORAGE_ACCOUNT_KEY_DESTINATION")
+)
+#DB creation
+spark.sql("CREATE DATABASE IF NOT EXISTS mydatabase")
+
+#input expedia
+expedia_df = spark.read.format("avro").load(f"wasbs://hw2@{input_storage_account}.blob.core.windows.net/expedia/")
+expedia_df.write.format("delta").mode("overwrite").option("mergeSchema", "true").save(f"wasbs://{output_container}@{output_storage_account}.blob.core.windows.net/delta/expedia")
+#delta table registration in DB metastore
+spark.sql("CREATE DATABASE IF NOT EXISTS mydatabase")
+spark.sql("DROP TABLE IF EXISTS mydatabase.expedia")
+spark.sql(f"""
+    CREATE TABLE IF NOT EXISTS mydatabase.expedia
+    USING DELTA
+    LOCATION 'wasbs://{output_container}@{output_storage_account}.blob.core.windows.net/delta/expedia/'
+""")
+
+#input hotel-weather
+hotel_weather_df = spark.read.format("parquet").load(f"wasbs://{input_container}@{input_storage_account}.blob.core.windows.net/hotel-weather/hotel-weather/")
+hotel_weather_df.write.format("delta").mode("overwrite").option("overwriteSchema", "true").save(f"wasbs://{output_container}@{output_storage_account}.blob.core.windows.net/delta/hotel-weather/")
+#delta table registration in DB metastore
+spark.sql("DROP TABLE IF EXISTS mydatabase.hotel_weather")
+spark.sql(f"""
+    CREATE TABLE IF NOT EXISTS mydatabase.hotel_weather
+    USING DELTA
+    LOCATION 'wasbs://{output_container}@{output_storage_account}.blob.core.windows.net/delta/hotel-weather'
+""")
+```
+
+## Here are the first 10 rows of them:
+
+![delta_h_w](https://github.com/user-attachments/assets/e6d8d445-88b9-4665-b098-0f0aab5f2a02)
+
+![delta_expe](https://github.com/user-attachments/assets/185d92ea-e4d6-4f92-a004-0ceb6a988b92)
+
+
 
 
 
