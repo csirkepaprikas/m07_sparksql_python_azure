@@ -386,8 +386,7 @@ SELECT * FROM mydatabase.hotel_weather LIMIT 10;
 
 ## Then created the whole delta tables on the destination container:
 ```python
-input_storage_account = "homework2corvin"
-output_storage_account = "developmentwesteurope6o"
+
 input_container = "hw2"
 output_container = "data"
 #input_storage_account_key = dbutils.secrets.get(scope="hw2secret", key="AZURE_STORAGE_ACCOUNT_KEY_SOURCE")
