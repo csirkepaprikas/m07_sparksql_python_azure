@@ -436,10 +436,122 @@ spark.sql(f"""
 
 ![delta_expe](https://github.com/user-attachments/assets/185d92ea-e4d6-4f92-a004-0ceb6a988b92)
 
+## Then I finalized the file reading, writing, delta table create version, also added the joined dataframe creation:
+
+```python
+# Azure Storage settings
+input_container = "hw2"
+output_container = "data"
+
+# Setting up Storage account keys
+spark.conf.set(
+    f"fs.azure.account.key.{input_storage_account}.blob.core.windows.net",
+    dbutils.secrets.get(scope="hw2secret", key="AZURE_STORAGE_ACCOUNT_KEY_SOURCE"))
+
+spark.conf.set(
+    f"fs.azure.account.key.{output_storage_account}.blob.core.windows.net",
+    dbutils.secrets.get(scope="hw2secret", key="AZURE_STORAGE_ACCOUNT_KEY_DESTINATION"))
+
+# Create database if it doesn't exist
+spark.sql("CREATE DATABASE IF NOT EXISTS mydatabase")
+
+# Read Expedia data from the source container and save it in Delta format to the data output container 
+expedia_df = spark.read.format("avro").load(f"wasbs://{input_container}@{input_storage_account}.blob.core.windows.net/expedia/")
+
+expedia_df.write.format("delta").mode("overwrite") \
+    .option("overwriteSchema", "true") \
+    .save(f"wasbs://{output_container}@{output_storage_account}.blob.core.windows.net/delta/expedia/")
+
+# Register the Expedia Delta table in the Metastore
+spark.sql("DROP TABLE IF EXISTS mydatabase.expedia")
+spark.sql(f"""
+    CREATE TABLE mydatabase.expedia
+    USING DELTA
+    LOCATION 'wasbs://{output_container}@{output_storage_account}.blob.core.windows.net/delta/expedia/'
+""")
+
+# Read Hotel-Weather data from the source container and save it in Delta format to the data output container, also partitioning is applied
+hotel_weather_df = spark.read.format("parquet").load(f"wasbs://{input_container}@{input_storage_account}.blob.core.windows.net/hotel-weather/hotel-weather/")
+
+hotel_weather_df.write.format("delta").mode("overwrite") \
+    .partitionBy("year", "month", "day") \
+    .option("overwriteSchema", "true") \
+    .save(f"wasbs://{output_container}@{output_storage_account}.blob.core.windows.net/delta/hotel-weather/")
+
+# Register the Hotel-Weather Delta table in the Metastore
+spark.sql("DROP TABLE IF EXISTS mydatabase.hotel_weather")
+spark.sql(f"""
+    CREATE TABLE mydatabase.hotel_weather
+    USING DELTA
+    LOCATION 'wasbs://{output_container}@{output_storage_account}.blob.core.windows.net/delta/hotel-weather/'
+""")
+
+# Refresh cache to see the most up-to-date data
+spark.sql("REFRESH TABLE mydatabase.expedia")
+spark.sql("REFRESH TABLE mydatabase.hotel_weather")
+
+#Due to the same column name in the two dataframes, we need to rename the column
+hotel_weather_df = hotel_weather_df.withColumnRenamed("id", "accomodation_id")
+# Join the Expedia and Hotel Weather data
+joined_df = expedia_df.join(hotel_weather_df, expedia_df.hotel_id == hotel_weather_df.accomodation_id, "left")
+
+# Save the intermediate DataFrame partitioned
+joined_df.write.format("parquet") \
+    .mode("overwrite") \
+    .partitionBy("year", "month", "day") \
+    .save(f"wasbs://{output_container}@{output_storage_account}.blob.core.windows.net/joined_data/")
+```
+## Then I tested the first query:
+![1st_sql_query](https://github.com/user-attachments/assets/a716c316-1f4e-4d85-b62a-dede85a739fb)
+
+## It seemed OK, so I added the "EXPLAIN" clause to the first row:
+
+```python
+EXPLAIN
+SELECT 
+    address,
+    year, 
+    month, 
+    ROUND(ABS(MAX(avg_tmpr_c) - MIN(avg_tmpr_c)), 2) AS temp_diff
+FROM mydatabase.hotel_weather
+GROUP BY address, year, month
+ORDER BY temp_diff DESC
+LIMIT 10;
+```
+
+## And got this execution plan, which I analyzed:
+```python
+== Physical Plan ==
+AdaptiveSparkPlan isFinalPlan=false
+## AdaptiveSparkPlan: The plan is adaptive, meaning it adjusts based on data distribution during execution.
++- == Initial Plan ==
+   ColumnarToRow
+   +- PhotonResultStage
+   ##PhotonResultStage & PhotonTopK: These indicate the use of Photon for efficient query execution. Sorting is done by temp_diff in descending order to return the top 10 results.
+      +- PhotonTopK(sortOrder=[temp_diff#361 DESC NULLS LAST], partitionOrderCount=0)
+         +- PhotonShuffleExchangeSource
+            +- PhotonShuffleMapStage
+               +- PhotonShuffleExchangeSink SinglePartition
+			   ## Shuffle & Partitioning: Data is shuffled and partitioned by address, year, and month to perform the GROUP BY operation.
+                  +- PhotonTopK(sortOrder=[temp_diff#361 DESC NULLS LAST], partitionOrderCount=0)
+                     +- PhotonGroupingAgg(keys=[address#391, year#402, month#403], functions=[finalmerge_max(merge max#409) AS max(avg_tmpr_c#392)#405, finalmerge_min(merge min#411) AS min(avg_tmpr_c#392)#406])
+					 ## Aggregation: The query performs partial aggregation (partial_max and partial_min) followed by final aggregation (finalmerge_max and finalmerge_min) to compute the temperature difference for each group.
+                        +- PhotonShuffleExchangeSource
+                           +- PhotonShuffleMapStage
+                              +- PhotonShuffleExchangeSink hashpartitioning(address#391, year#402, month#403, 200)
+							  ## The data is distributed across 200 partitions to balance parallelism.
+                                 +- PhotonGroupingAgg(keys=[address#391, year#402, month#403], functions=[partial_max(avg_tmpr_c#392) AS max#409, partial_min(avg_tmpr_c#392) AS min#411])
+                                    +- PhotonProject [address#391, avg_tmpr_c#392, year#402, month#403]
+                                       +- PhotonScan parquet spark_catalog.mydatabase.hotel_weather[address#391,avg_tmpr_c#392,year#402,month#403,day#404] DataFilters: [], DictionaryFilters: [], Format: parquet, Location: PreparedDeltaFileIndex(1 paths)[wasbs://data@developmentwesteurope6o.blob.core.windows.net/delta/..., OptionalDataFilters: [], PartitionFilters: [], ReadSchema: struct<address:string,avg_tmpr_c:double>, RequiredDataFilters: []
+									   ## Data Scan: The PhotonScan reads the data from Delta Parquet files, which is efficient for large datasets.
 
 
+== Photon Explanation ==
+The query is fully supported by Photon.
 
+## The most time consuming parts are Shuffle and Aggregation are resource-intensive, but Spark uses multi-phase aggregation to optimize it. Sorting by temp_diff with PhotonTopK is computationally expensive.
 
+```
 
 
 
