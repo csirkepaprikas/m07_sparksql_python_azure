@@ -1023,10 +1023,214 @@ WHERE temp_trend IS NOT NULL
   AND avg_temperature IS NOT NULL
   AND DATEDIFF(last_day, first_day) >= 7
 ORDER BY ABS(temp_trend) DESC;
-
-
-
 ```
+
+## Then I saved the first query preserving the original date based partitioning:
+```python
+df_first = spark.sql("""
+	SELECT 
+    address,    -- Select the hotel address.
+    year,       -- Select the year from the data.
+    month,      -- Select the month from the data.
+    -- Calculate the temperature difference within each group:
+    --   1. Find the maximum average temperature (avg_tmpr_c) in the group.
+    --   2. Find the minimum average temperature (avg_tmpr_c) in the group.
+    --   3. Compute the absolute difference between these values.
+    --   4. Round the result to 2 decimal places and alias it as 'temp_diff'.
+    ROUND(ABS(MAX(avg_tmpr_c) - MIN(avg_tmpr_c)), 2) AS temp_diff
+	FROM mydatabase.hotel_weather   -- Data is sourced from the hotel_weather table.
+	GROUP BY address, year, month    -- Group the records by hotel address, year, and month.
+	ORDER BY temp_diff DESC          -- Order the groups by temperature difference in descending order.
+	LIMIT 10;                       -- Limit the result to the top 10 groups with the largest temperature differences.
+""")
+
+df_first.write.format("parquet") \
+    .mode("overwrite") \
+    .partitionBy("year", "month") \
+    .save("dbfs:/mnt/data/final_datamarts/first")
+```
+## Also checked it:
+```python
+df_check = spark.read.parquet("dbfs:/mnt/data/final_datamarts/first")
+df_check.show(10)
+```
++--------------------+---------+----+-----+
+|             address|temp_diff|year|month|
++--------------------+---------+----+-----+
+|         Rodeway Inn|     20.2|2016|   10|
+|Americas Best Val...|     20.3|2016|   10|
+|Quality Inn and S...|     21.1|2016|   10|
+|             Motel 6|     21.7|2016|   10|
+|            Studio 6|     23.0|2016|   10|
+|         Comfort Inn|     23.5|2016|   10|
+|Americas Best Val...|     19.6|2017|    9|
+|         Comfort Inn|     19.9|2017|    9|
+|Quality Inn & Suites|     20.2|2017|    9|
+|Quality Inn and S...|     21.7|2017|    9|
++--------------------+---------+----+-----+
+
+## Here you can see the saved data:
+
+![first_saved](https://github.com/user-attachments/assets/6e626d29-905b-4b13-a585-f82b846f3e8c)
+
+## Then I saved the second query preserving the original date based partitioning:
+```python
+df_second = spark.sql("""
+	WITH exploded_dates AS (
+		SELECT
+			ex.hotel_id,
+			hw.address,
+			explode(sequence(
+				CAST(ex.srch_ci AS DATE), 
+				CAST(ex.srch_co AS DATE) - INTERVAL 1 DAY, 
+				interval 1 day)) AS visit_date
+		FROM mydatabase.expedia ex
+		LEFT JOIN mydatabase.hotel_weather hw
+		ON ex.hotel_id = hw.id
+		WHERE CAST(ex.srch_ci AS DATE) < CAST(ex.srch_co AS DATE)
+		AND hw.address IS NOT NULL
+	),
+	monthly_visits AS (
+		SELECT
+			address,
+			YEAR(visit_date) AS year,
+			MONTH(visit_date) AS month,
+			COUNT(*) AS visits_count
+		FROM exploded_dates
+		GROUP BY address, YEAR(visit_date), MONTH(visit_date)
+	),
+	ranked_hotels AS (
+		SELECT *,
+			DENSE_RANK() OVER (PARTITION BY year, month ORDER BY visits_count DESC) AS rank
+		FROM monthly_visits
+	)
+	SELECT * FROM ranked_hotels WHERE rank <= 10;
+""")
+df_second.write.format("parquet") \
+    .mode("overwrite") \
+    .partitionBy("year", "month") \
+    .save("dbfs:/mnt/data/final_datamarts/second")
+```
+
+## Also checked it:
+```python
+df_check = spark.read.parquet("dbfs:/mnt/data/final_datamarts/second")
+df_check.show(10)
+```
++--------------------+------------+----+----+-----+
+|             address|visits_count|rank|year|month|
++--------------------+------------+----+----+-----+
+|Sofitel Paris Le ...|         420|   1|2017|   11|
+|The Pelham Starho...|         300|   2|2017|   11|
+|   Hotel Millersburg|         300|   2|2017|   11|
+|Best Western Hote...|         270|   3|2017|   11|
+|     TH Street Duomo|         270|   3|2017|   11|
+|IH Hotels Milano ...|         270|   3|2017|   11|
+|      Shoshone Lodge|         270|   3|2017|   11|
+|            Nu Hotel|         270|   3|2017|   11|
+|Conservatorium Hotel|         246|   4|2017|   11|
+|Mercure Vaugirard...|         240|   5|2017|   11|
++--------------------+------------+----+----+-----+
+
+![second_saved](https://github.com/user-attachments/assets/6cf6dc1c-a23e-4fc4-a5ce-219e7e6205e6)
+
+
+## Then I saved the third query preserving the original date based partitioning:
+```python
+df_third = spark.sql("""
+	WITH exploded_dates AS (
+		SELECT
+			ex.id AS booking_id,
+			ex.hotel_id,
+			ex.srch_ci,
+			ex.srch_co,
+			explode(sequence(
+				CAST(ex.srch_ci AS DATE), 
+				CAST(ex.srch_co AS DATE) - INTERVAL 1 DAY,
+				INTERVAL 1 DAY
+			)) AS visit_date
+		FROM mydatabase.expedia ex
+		WHERE DATEDIFF(ex.srch_co, ex.srch_ci) BETWEEN 7 AND 30
+		AND ex.srch_co > ex.srch_ci
+	),
+	joined_weather AS (
+		SELECT 
+			ed.booking_id,
+			ed.hotel_id,
+			ed.visit_date,
+			hw.avg_tmpr_c,
+			hw.address
+		FROM exploded_dates ed
+		LEFT JOIN mydatabase.hotel_weather hw
+		ON ed.hotel_id = hw.id 
+			AND CAST(hw.wthr_date AS DATE) = ed.visit_date
+		WHERE hw.avg_tmpr_c IS NOT NULL
+	),
+	windowed_temps AS (
+		SELECT
+			booking_id,
+			hotel_id,
+			address,
+			visit_date,
+			avg_tmpr_c,
+			FIRST_VALUE(avg_tmpr_c) OVER (PARTITION BY booking_id ORDER BY visit_date) AS first_temp,
+			LAST_VALUE(avg_tmpr_c) OVER (PARTITION BY booking_id ORDER BY visit_date 
+				ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS last_temp
+		FROM joined_weather
+	),
+	temp_calculations AS (
+		SELECT
+			booking_id,
+			hotel_id,
+			address,
+			MIN(visit_date) AS first_day,
+			MAX(visit_date) AS last_day,
+			ROUND(last_temp - first_temp, 2) AS temp_trend,
+			ROUND(AVG(avg_tmpr_c), 2) AS avg_temperature
+		FROM windowed_temps
+		GROUP BY booking_id, hotel_id, address, first_temp, last_temp
+	)
+	SELECT *
+	FROM temp_calculations
+	WHERE temp_trend IS NOT NULL
+	AND avg_temperature IS NOT NULL
+	AND DATEDIFF(last_day, first_day) >= 7
+	ORDER BY ABS(temp_trend) DESC;
+""")
+
+df_third.write.format("parquet") \
+    .mode("overwrite") \
+    .partitionBy("first_day", "last_day") \
+    .save("dbfs:/mnt/data/final_datamarts/third")
+```
+
+## then checked it:
+```python
+df_check = spark.read.parquet("dbfs:/mnt/data/final_datamarts/third")
+df_check.show(10)
+df_check.count()
+```
++----------+-------------+--------------------+----------+---------------+----------+----------+
+|booking_id|     hotel_id|             address|temp_trend|avg_temperature| first_day|  last_day|
++----------+-------------+--------------------+----------+---------------+----------+----------+
+|    660388|1262720385024|Holiday Inn Expre...|      -1.6|           34.1|2017-08-25|2017-09-03|
+|     22002|1262720385024|Holiday Inn Expre...|      -1.6|           34.1|2017-08-25|2017-09-03|
+|   2484059|1812476198912|  Staunton Hotel B B|      -3.2|           15.5|2017-08-25|2017-09-03|
+|   2456610|1855425871872|           Avo Hotel|      -3.2|           15.5|2017-08-25|2017-09-03|
+|   2418879|2310692405248|DoubleTree by Hil...|      -3.2|           15.5|2017-08-25|2017-09-03|
+|   2389551|2602750181378|Old Ship Inn Hackney|      -3.2|           15.5|2017-08-25|2017-09-03|
+|   2338050|2834678415363|Club Quarters Hot...|      -3.2|           15.5|2017-08-25|2017-09-03|
+|   2318405|2276332666883|Holiday Inn Londo...|      -3.2|           15.5|2017-08-25|2017-09-03|
+|   2302704|1812476198912|  Staunton Hotel B B|      -3.2|           15.5|2017-08-25|2017-09-03|
+|   2271827|2413771620353|Comfort Inn Suite...|      -3.2|           15.5|2017-08-25|2017-09-03|
++----------+-------------+--------------------+----------+---------------+----------+----------+
+only showing top 10 rows
+
+1410
+
+![third_saved](https://github.com/user-attachments/assets/4e5a944c-f740-42d6-bde0-7705bc5f62f3)
+
+
 
 
 
