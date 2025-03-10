@@ -552,6 +552,10 @@ SELECT *
 FROM ranked_hotels 
 WHERE rank <= 10;
 ```
+## You can see the fraction of the result:
+
+![2nd_result](https://github.com/user-attachments/assets/87b5914d-1e87-4948-b5a8-5892e1a80090)
+
 ## I also applied to EXPLAIN clause to get the execution plan:
 ```sql
 %sql
@@ -725,4 +729,74 @@ WHERE temp_trend IS NOT NULL
   AND DATEDIFF(last_day, first_day) >= 7
 ORDER BY ABS(temp_trend) DESC;
 ```
+## You can se the franction of the query's result:
+
+![3rd_result](https://github.com/user-attachments/assets/f3cf0d69-3d34-4d6d-bbfa-27da4e4485eb)
+
+## Here is the whole query with the EXPLAIN clause:
+```sql
+%sql
+EXPLAIN
+WITH exploded_dates AS (
+    SELECT
+        ex.id AS booking_id,
+        ex.hotel_id,
+        ex.srch_ci,
+        ex.srch_co,
+        explode(sequence(
+            CAST(ex.srch_ci AS DATE), 
+            CAST(ex.srch_co AS DATE) - INTERVAL 1 DAY,
+            INTERVAL 1 DAY
+        )) AS visit_date
+    FROM mydatabase.expedia ex
+    WHERE DATEDIFF(ex.srch_co, ex.srch_ci) BETWEEN 7 AND 30
+      AND ex.srch_co > ex.srch_ci
+),
+joined_weather AS (
+    SELECT 
+        ed.booking_id,
+        ed.hotel_id,
+        ed.visit_date,
+        hw.avg_tmpr_c,
+        hw.address
+    FROM exploded_dates ed
+    LEFT JOIN mydatabase.hotel_weather hw
+      ON ed.hotel_id = hw.id 
+         AND CAST(hw.wthr_date AS DATE) = ed.visit_date
+    WHERE hw.avg_tmpr_c IS NOT NULL
+),
+windowed_temps AS (
+    SELECT
+        booking_id,
+        hotel_id,
+        address,
+        visit_date,
+        avg_tmpr_c,
+        FIRST_VALUE(avg_tmpr_c) OVER (PARTITION BY booking_id ORDER BY visit_date) AS first_temp,
+        LAST_VALUE(avg_tmpr_c) OVER (PARTITION BY booking_id ORDER BY visit_date 
+            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS last_temp
+    FROM joined_weather
+),
+temp_calculations AS (
+    SELECT
+        booking_id,
+        hotel_id,
+        address,
+        MIN(visit_date) AS first_day,
+        MAX(visit_date) AS last_day,
+        ROUND(last_temp - first_temp, 2) AS temp_trend,
+        ROUND(AVG(avg_tmpr_c), 2) AS avg_temperature
+    FROM windowed_temps
+    GROUP BY booking_id, hotel_id, address, first_temp, last_temp
+)
+SELECT *
+FROM temp_calculations
+WHERE temp_trend IS NOT NULL
+  AND avg_temperature IS NOT NULL
+  AND DATEDIFF(last_day, first_day) >= 7
+ORDER BY ABS(temp_trend) DESC;
+```
+
+## And finally the analyzed execution plan:
+
 
