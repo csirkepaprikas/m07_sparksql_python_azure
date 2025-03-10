@@ -640,7 +640,89 @@ AdaptiveSparkPlan isFinalPlan=false
                                                             +- PhotonProject [address#740, id#746]
                                                                ## PhotonScan: Reads hotel_weather data from Parquet.
                                                                +- PhotonScan parquet spark_catalog.mydatabase.hotel_weather[...]  ## Reads hotel_weather data.
+
+
 Generate explode(sequence(...)) operator is themost resource consuming part, which breaks each hotel booking into individual days between the check-in and check-out dates, is the heaviest operation. This step can dramatically increase the number of rows that need to be processed, putting significant pressure on subsequent operations like aggregations and window functions
 ```
-
+## And the third query:
+# For visits with extended stay (more than 7 days) calculate weather trend (the day temperature difference between last and first day of stay) and average temperature during stay
+```sql
+-- First CTE: Create one row per day for each booking that lasts between 7 and 30 days.
+WITH exploded_dates AS (
+    SELECT
+        ex.id AS booking_id,     -- Unique booking identifier.
+        ex.hotel_id,             -- Hotel identifier.
+        ex.srch_ci,              -- Check-in date.
+        ex.srch_co,              -- Check-out date.
+        -- Generate a sequence of dates from the check-in date to the day before the check-out date.
+        -- The 'explode' function creates a separate row for each date in the sequence.
+        explode(sequence(
+            CAST(ex.srch_ci AS DATE), 
+            CAST(ex.srch_co AS DATE) - INTERVAL 1 DAY,
+            INTERVAL 1 DAY
+        )) AS visit_date
+    FROM mydatabase.expedia ex
+    WHERE 
+        -- Only include bookings with a duration between 7 and 30 days.
+        DATEDIFF(ex.srch_co, ex.srch_ci) BETWEEN 7 AND 30
+        AND ex.srch_co > ex.srch_ci  -- Ensure the check-out date is after the check-in date.
+),
+-- Second CTE: Join the exploded booking dates with hotel weather data.
+joined_weather AS (
+    SELECT 
+        ed.booking_id,   -- Booking identifier from the exploded_dates CTE.
+        ed.hotel_id,     -- Hotel identifier.
+        ed.visit_date,   -- The individual visit date generated earlier.
+        hw.avg_tmpr_c,   -- The average temperature from the hotel_weather table.
+        hw.address       -- Hotel address.
+    FROM exploded_dates ed
+    LEFT JOIN mydatabase.hotel_weather hw
+      -- Join on matching hotel IDs and where the weather date corresponds to the visit_date.
+      ON ed.hotel_id = hw.id 
+         AND CAST(hw.wthr_date AS DATE) = ed.visit_date
+    WHERE hw.avg_tmpr_c IS NOT NULL  -- Only include records with temperature data.
+),
+-- Third CTE: Apply window functions to capture the first and last temperature of each booking.
+windowed_temps AS (
+    SELECT
+        booking_id,
+        hotel_id,
+        address,
+        visit_date,
+        avg_tmpr_c,
+        -- Get the first average temperature for the booking (earliest visit_date).
+        FIRST_VALUE(avg_tmpr_c) OVER (PARTITION BY booking_id ORDER BY visit_date) AS first_temp,
+        -- Get the last average temperature for the booking (latest visit_date)
+        -- using an unbounded frame to cover the full partition.
+        LAST_VALUE(avg_tmpr_c) OVER (
+            PARTITION BY booking_id 
+            ORDER BY visit_date 
+            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+        ) AS last_temp
+    FROM joined_weather
+),
+-- Fourth CTE: Calculate temperature trend and average temperature for each booking.
+temp_calculations AS (
+    SELECT
+        booking_id,
+        hotel_id,
+        address,
+        MIN(visit_date) AS first_day,      -- The first day of the booking.
+        MAX(visit_date) AS last_day,         -- The last day of the booking.
+        -- Calculate the temperature trend as the difference between last and first temperatures.
+        ROUND(last_temp - first_temp, 2) AS temp_trend,
+        -- Calculate the average temperature during the booking.
+        ROUND(AVG(avg_tmpr_c), 2) AS avg_temperature
+    FROM windowed_temps
+    GROUP BY booking_id, hotel_id, address, first_temp, last_temp
+)
+-- Final query: Retrieve bookings with valid temperature trends and a minimum duration of 7 days,
+-- and order the results by the absolute temperature trend in descending order.
+SELECT *
+FROM temp_calculations
+WHERE temp_trend IS NOT NULL
+  AND avg_temperature IS NOT NULL
+  AND DATEDIFF(last_day, first_day) >= 7
+ORDER BY ABS(temp_trend) DESC;
+```
 
