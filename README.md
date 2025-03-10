@@ -449,8 +449,11 @@ joined_df.write.format("parquet") \
     .partitionBy("year", "month", "day") \
     .save(f"wasbs://{output_container}@{output_storage_account}.blob.core.windows.net/joined_data/")
 ```
-## Then I tested the first query:
-![1st_sql_query](https://github.com/user-attachments/assets/a716c316-1f4e-4d85-b62a-dede85a739fb)
+## Then I tested the first query :
+# Top 10 hotels with max absolute temperature difference by month
+
+
+![1st_commented](https://github.com/user-attachments/assets/765c68ea-7e43-4e22-bb13-5c1c22ddd772)
 
 ## It seemed OK, so I added the "EXPLAIN" clause to the first row:
 
@@ -501,6 +504,53 @@ The query is fully supported by Photon.
 
 ```
 
+## Then the second query:
+#  Top 10 busy (e.g., with the biggest visits count) hotels for each month. If visit dates refer to several months, it should be counted for all affected months
 
+```sql
+-- First CTE: Generate one row per day for each hotel booking.
+WITH exploded_dates AS (
+    SELECT
+        ex.hotel_id,          -- The hotel ID from the Expedia bookings table.
+        hw.address,           -- The hotel address from the hotel weather table.
+        -- Generate a sequence of dates from the check-in date (inclusive) to the day before check-out (inclusive)
+        -- and then create a separate row for each date.
+        explode(
+            sequence(
+                CAST(ex.srch_ci AS DATE), 
+                CAST(ex.srch_co AS DATE) - INTERVAL 1 DAY, 
+                interval 1 day
+            )
+        ) AS visit_date
+    FROM mydatabase.expedia ex
+    LEFT JOIN mydatabase.hotel_weather hw
+        ON ex.hotel_id = hw.id  -- Join the hotel weather data on matching hotel IDs.
+    WHERE 
+        CAST(ex.srch_ci AS DATE) < CAST(ex.srch_co AS DATE)  -- Only consider bookings with a valid date range.
+        AND hw.address IS NOT NULL                           -- Only include records where the hotel address is available.
+),
+-- Second CTE: Aggregate visit counts by hotel address for each month.
+monthly_visits AS (
+    SELECT
+        address,
+        YEAR(visit_date) AS year,   -- Extract the year from the visit date.
+        MONTH(visit_date) AS month, -- Extract the month from the visit date.
+        COUNT(*) AS visits_count    -- Count the number of visit days per address in the given month.
+    FROM exploded_dates
+    GROUP BY address, YEAR(visit_date), MONTH(visit_date)
+),
+-- Third CTE: Rank hotels within each month based on the number of visits.
+ranked_hotels AS (
+    SELECT *,
+        -- Use DENSE_RANK to assign a rank to each hotel within each year and month partition,
+        -- ordering by visits_count in descending order so that hotels with the most visits rank highest.
+        DENSE_RANK() OVER (PARTITION BY year, month ORDER BY visits_count DESC) AS rank
+    FROM monthly_visits
+)
+-- Final selection: Return hotels that are among the top 10 for each month.
+SELECT * 
+FROM ranked_hotels 
+WHERE rank <= 10;
+```
 
 
