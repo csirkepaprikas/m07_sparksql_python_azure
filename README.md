@@ -244,7 +244,7 @@ random_string.suffix: Creation complete after 0s [id=6o]
 azurerm_resource_group.bdcc: Creating...
 azurerm_resource_group.bdcc: Still creating... [10s elapsed]
 azurerm_resource_group.bdcc: Still creating... [20s elapsed]
-azurerm_resource_group.bdcc: Creation complete after 23s [id=/subscriptions/69d1cd19-02e9-411d-8f6d-68149807689b/resourceGroups/rg-development-westeurope-6o]
+azurerm_resource_group.bdcc: Creation complete after 23s [id=/subscriptions//resourceGroups/rg-development-westeurope-6o]
 azurerm_databricks_workspace.bdcc: Creating...
 azurerm_storage_account.bdcc: Creating...
 azurerm_databricks_workspace.bdcc: Still creating... [10s elapsed]
@@ -259,7 +259,7 @@ azurerm_databricks_workspace.bdcc: Still creating... [50s elapsed]
 azurerm_storage_account.bdcc: Still creating... [50s elapsed]
 azurerm_databricks_workspace.bdcc: Still creating... [1m0s elapsed]
 azurerm_storage_account.bdcc: Still creating... [1m0s elapsed]
-azurerm_storage_account.bdcc: Creation complete after 1m6s [id=/subscriptions/69d1cd19-02e9-411d-8f6d-68149807689b/resourceGroups/rg-development-westeurope-6o/providers/Microsoft.Storage/storageAccounts/developmentwesteurope6o]
+azurerm_storage_account.bdcc: Creation complete after 1m6s [id=/subscriptions//resourceGroups/rg-development-westeurope-6o/providers/Microsoft.Storage/storageAccounts/developmentwesteurope6o]
 azurerm_storage_data_lake_gen2_filesystem.gen2_data: Creating...
 azurerm_databricks_workspace.bdcc: Still creating... [1m10s elapsed]
 azurerm_storage_data_lake_gen2_filesystem.gen2_data: Still creating... [10s elapsed]
@@ -272,7 +272,7 @@ azurerm_databricks_workspace.bdcc: Still creating... [2m0s elapsed]
 azurerm_databricks_workspace.bdcc: Still creating... [2m10s elapsed]
 azurerm_databricks_workspace.bdcc: Still creating... [2m20s elapsed]
 azurerm_databricks_workspace.bdcc: Still creating... [2m30s elapsed]
-azurerm_databricks_workspace.bdcc: Creation complete after 2m36s [id=/subscriptions/69d1cd19-02e9-411d-8f6d-68149807689b/resourceGroups/rg-development-westeurope-6o/providers/Microsoft.Databricks/workspaces/dbw-development-westeurope-6o]
+azurerm_databricks_workspace.bdcc: Creation complete after 2m36s [id=/subscriptions//resourceGroups/rg-development-westeurope-6o/providers/Microsoft.Databricks/workspaces/dbw-development-westeurope-6o]
 Releasing state lock. This may take a few moments...
 
 Apply complete! Resources: 5 added, 0 changed, 3 destroyed.
