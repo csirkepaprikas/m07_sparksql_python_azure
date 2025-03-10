@@ -552,5 +552,95 @@ SELECT *
 FROM ranked_hotels 
 WHERE rank <= 10;
 ```
+## I also applied to EXPLAIN clause to get the execution plan:
+```sql
+%sql
+EXPLAIN
+WITH exploded_dates AS (
+    SELECT
+        ex.hotel_id,
+        hw.address,
+        explode(sequence(
+            CAST(ex.srch_ci AS DATE), 
+            CAST(ex.srch_co AS DATE) - INTERVAL 1 DAY, 
+            interval 1 day)) AS visit_date
+    FROM mydatabase.expedia ex
+    LEFT JOIN mydatabase.hotel_weather hw
+    ON ex.hotel_id = hw.id
+    WHERE CAST(ex.srch_ci AS DATE) < CAST(ex.srch_co AS DATE)
+    AND hw.address IS NOT NULL
+),
+monthly_visits AS (
+    SELECT
+        address,
+        YEAR(visit_date) AS year,
+        MONTH(visit_date) AS month,
+        COUNT(*) AS visits_count
+    FROM exploded_dates
+    GROUP BY address, YEAR(visit_date), MONTH(visit_date)
+),
+ranked_hotels AS (
+    SELECT *,
+        DENSE_RANK() OVER (PARTITION BY year, month ORDER BY visits_count DESC) AS rank
+    FROM monthly_visits
+)
+SELECT * FROM ranked_hotels WHERE rank <= 10;
+```
+## You can see the commented execution plan below:
+```python
+== Physical Plan ==
+AdaptiveSparkPlan isFinalPlan=false
++- == Initial Plan ==
+   ## Filter stage: Keeps rows where the computed rank is <= 10.
+   Filter (rank#670 <= 10)
+   +- RunningWindowFunction [address#740, year#667, month#668, visits_count#669L, 
+         dense_rank(visits_count#669L) OVER (PARTITION BY year#667, month#668 ORDER BY visits_count#669L DESC NULLS LAST)
+         AS rank#670], [year#667, month#668], [visits_count#669L DESC NULLS LAST], false
+      +- Sort [year#667 ASC NULLS FIRST, month#668 ASC NULLS FIRST, visits_count#669L DESC NULLS LAST], false, 0
+         ## Exchange stage: Data is shuffled across 200 partitions by year and month.
+         +- Exchange hashpartitioning(year#667, month#668, 200), ENSURE_REQUIREMENTS, [plan_id=917]
+            ## Project stage: Selects address, year, month, and visits_count for further processing.
+            +- Project [address#740, year#667, month#668, visits_count#669L]
+               ## Filter stage: Applies a local dense rank filter (<= 10) on each group.
+               +- Filter (_local_dense_rank#808 <= 10)
+                  ## RunningWindowFunction stage: Computes local dense rank within each (year, month) partition.
+                  +- RunningWindowFunction [address#740, year#667, month#668, visits_count#669L, 
+                        dense_rank(visits_count#669L) OVER (PARTITION BY year#667, month#668 ORDER BY visits_count#669L DESC NULLS LAST)
+                        AS _local_dense_rank#808], [year#667, month#668], [visits_count#669L DESC NULLS LAST], true
+                     +- Sort [year#667 ASC NULLS FIRST, month#668 ASC NULLS FIRST, visits_count#669L DESC NULLS LAST], false, 0
+                        ## HashAggregate stage: Performs grouping by address, extracting year and month from visit_date,
+                        ## and computes the count of visits per group.
+                        +- HashAggregate(keys=[address#740, _groupingexpression#769, _groupingexpression#770],
+                              functions=[finalmerge_count(merge count#772L) AS count(1)#754L])
+                           ## Exchange: Data shuffling for aggregation based on grouping keys.
+                           +- Exchange hashpartitioning(address#740, _groupingexpression#769, _groupingexpression#770, 200), ENSURE_REQUIREMENTS, [plan_id=911]
+                              ## HashAggregate: Partial aggregation stage computing the count per group.
+                              +- HashAggregate(keys=[address#740, _groupingexpression#769, _groupingexpression#770],
+                                    functions=[partial_count(1) AS count#772L])
+                                 ## Project: Extracts address and computes grouping keys (year and month from visit_date).
+                                 +- Project [address#740, year(visit_date#759) AS _groupingexpression#769, month(visit_date#759) AS _groupingexpression#770]
+                                    ## Generate: Explodes the date sequence from check-in to check-out-1 day.
+                                    +- Generate explode(sequence(cast(srch_ci#732 as date),
+                                          date_add(cast(srch_co#733 as date), -1),
+                                          Some(INTERVAL '1' DAY), Some(Etc/UTC))),
+                                          [address#740], false, [visit_date#759]
+                                       ## Converts columnar format to row format.
+                                       +- ColumnarToRow
+                                          ## PhotonResultStage: Initial stage using Photon engine.
+                                          +- PhotonResultStage
+                                             ## PhotonProject: Projects required columns (srch_ci, srch_co, address) from expedia.
+                                             +- PhotonProject [srch_ci#732, srch_co#733, address#740]
+                                                ## PhotonBroadcastHashJoin: Joins expedia and hotel_weather on hotel_id.
+                                                +- PhotonBroadcastHashJoin [hotel_id#739L], [cast(id#746 as bigint)], Inner, BuildRight, false, true
+                                                   :- PhotonScan parquet spark_catalog.mydatabase.expedia[...]  ## Reads expedia data.
+                                                   +- PhotonShuffleExchangeSource
+                                                      +- PhotonShuffleMapStage
+                                                         +- PhotonShuffleExchangeSink SinglePartition
+                                                            ## PhotonProject: Projects columns (address, id) from hotel_weather.
+                                                            +- PhotonProject [address#740, id#746]
+                                                               ## PhotonScan: Reads hotel_weather data from Parquet.
+                                                               +- PhotonScan parquet spark_catalog.mydatabase.hotel_weather[...]  ## Reads hotel_weather data.
+Generate explode(sequence(...)) operator is themost resource consuming part, which breaks each hotel booking into individual days between the check-in and check-out dates, is the heaviest operation. This step can dramatically increase the number of rows that need to be processed, putting significant pressure on subsequent operations like aggregations and window functions
+```
 
 
