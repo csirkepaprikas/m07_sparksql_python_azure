@@ -798,5 +798,238 @@ ORDER BY ABS(temp_trend) DESC;
 ```
 
 ## And finally the analyzed execution plan:
+```sql
+== Physical Plan ==
+AdaptiveSparkPlan isFinalPlan=false  -- Adaptive Query Execution (AQE) is enabled for dynamic optimizations
+
++- == Initial Plan ==
+   Sort [abs(temp_trend#871) DESC NULLS LAST], true, 0  -- Sorting the final output by absolute temperature trend in descending order
+   +- Exchange rangepartitioning(abs(temp_trend#871) DESC NULLS LAST, 200), ENSURE_REQUIREMENTS, [plan_id=1246]  
+      -- Shuffling data across partitions based on temperature trend for parallel processing
+
+      +- Filter (((isnotnull(last_day#870) AND isnotnull(first_day#869)) AND isnotnull(avg_temperature#872)) 
+                 AND (datediff(last_day#870, first_day#869) >= 7))
+         -- Filtering out records where first_day, last_day, or avg_temperature is NULL
+         -- Ensuring that only bookings with a duration of at least 7 days are included
+
+         +- HashAggregate(
+              keys=[booking_id#865L, hotel_id#927L, address#942, 
+                    knownfloatingpointnormalized(normalizenanandzero(first_temp#867)) AS first_temp#867, 
+                    knownfloatingpointnormalized(normalizenanandzero(last_temp#868)) AS last_temp#868], 
+              functions=[min(visit_date#957), max(visit_date#957), avg(avg_tmpr_c#943)])
+            -- Aggregating data per booking_id, hotel_id, and address
+            -- Calculating the first and last visit date, temperature trend, and average temperature
+
+            +- Filter isnotnull(round((last_temp#868 - first_temp#867), 2))
+               -- Filtering out any records where the temperature trend calculation is NULL
+
+               +- Window [
+                    booking_id#865L, hotel_id#927L, address#942, visit_date#957, avg_tmpr_c#943, 
+                    first_value(avg_tmpr_c#943, false) OVER 
+                      (PARTITION BY booking_id ORDER BY visit_date ASC NULLS FIRST 
+                      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS first_temp#867, 
+                    last_value(avg_tmpr_c#943, false) OVER 
+                      (PARTITION BY booking_id ORDER BY visit_date ASC NULLS FIRST 
+                      ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS last_temp#868
+                  ], 
+                  [booking_id#865L], [visit_date#957 ASC NULLS FIRST]
+                 -- Using window functions to determine the first and last temperature per booking_id
+                 -- FIRST_VALUE() gets the temperature at the first visit date
+                 -- LAST_VALUE() gets the temperature at the last visit date
+
+                  +- Sort [booking_id#865L ASC NULLS FIRST, visit_date#957 ASC NULLS FIRST], false, 0
+                     -- Sorting data by booking ID and visit date to optimize window function execution
+
+                     +- Exchange hashpartitioning(booking_id#865L, 200), ENSURE_REQUIREMENTS, [plan_id=1240]
+                        -- Shuffling data to partition by booking_id before applying window functions
+
+                        +- Project [booking_id#865L, hotel_id#927L, address#942, visit_date#957, avg_tmpr_c#943]
+                           -- Selecting relevant columns for further processing
+
+                           +- BroadcastHashJoin [hotel_id#927L, visit_date#957], 
+                                                [cast(id#948 as bigint), cast(wthr_date#952 as date)], 
+                                                Inner, BuildRight, false, true
+                              -- Performing a **broadcast hash join** between Expedia bookings and weather data
+                              -- The weather data is **broadcasted** (small table optimization)
+
+                              :- Project [id#908L AS booking_id#865L, hotel_id#927L, visit_date#957]
+                              :  +- Generate explode(sequence(
+                                         cast(srch_ci#920 as date), 
+                                         date_add(cast(srch_co#921 as date), -1), 
+                                         Some(INTERVAL '1' DAY), 
+                                         Some(Etc/UTC))), 
+                                         [id#908L, hotel_id#927L], false, [visit_date#957]
+                              :     -- Expanding (exploding) each booking into multiple records, one for each visit date
+                              :     -- sequence() generates a list of all dates between check-in and check-out
+                              :     -- explode() transforms the list into individual rows
+
+                              :     +- ColumnarToRow
+                              :        +- PhotonResultStage
+                              :           +- PhotonScan parquet spark_catalog.mydatabase.expedia
+                                           [id#908L, srch_ci#920, srch_co#921, hotel_id#927L] 
+                                           DataFilters: [isnotnull(hotel_id#927L), 
+                                                         isnotnull(srch_co#921), 
+                                                         isnotnull(srch_ci#920), 
+                                                         (srch_co#921 > srch_ci...)], 
+                                           Format: parquet, Location: Delta Lake
+                                           -- Scanning the Expedia dataset from Delta Lake in **columnar format**
+                                           -- Filtering out NULL values and invalid date ranges
+
+                              +- Exchange SinglePartition, EXECUTOR_BROADCAST, [plan_id=1237]
+                                 -- Broadcasting the weather dataset to all partitions
+
+                                 +- ColumnarToRow
+                                    +- PhotonResultStage
+                                       +- PhotonProject [address#942, avg_tmpr_c#943, id#948, wthr_date#952]
+                                          +- PhotonScan parquet spark_catalog.mydatabase.hotel_weather
+                                             [address#942, avg_tmpr_c#943, id#948, wthr_date#952] 
+                                             DataFilters: [isnotnull(avg_tmpr_c#943), 
+                                                           isnotnull(id#948), 
+                                                           isnotnull(wthr_date#952)], 
+                                             Format: parquet, Location: Delta Lake
+                                             -- Scanning the hotel weather dataset from Delta Lake
+                                             -- Filtering out NULL values in key columns
+
+-- The most "expensive" operation is the sort +- Sort [booking_id#865L ASC NULLS FIRST, visit_date#957 ASC NULLS FIRST], false, 0 before the window function.
+--I can improve the operation with application of ZORDER BY (booking_id, visit_date) is the particular Delta table.
+
+```
+
+## As I wrote above I applied some optimizations:
+## 1. Reorganization of the tables iwth ZORDER BY for more efficient querys(less shuffling, faster querys):
+```sql
+OPTIMIZE mydatabase.expedia
+ZORDER BY (booking_id, srch_ci);
+
+OPTIMIZE mydatabase.hotel_weather
+ZORDER BY (id, wthr_date);
+```
+## 2. I avoided the expensive CAST conversions and the dynamic sequence() functions with a predefined date_squence table:
+ ```sql
+CREATE TABLE mydatabase.date_sequence AS 
+SELECT explode(sequence(
+    to_date('2016-10-01'), 
+    to_date('2018-10-06'), 
+    INTERVAL 1 DAY)) AS visit_date;
+```
+## 3. Data preprocessing: the window functions are very expensive, so I precomputed them to an aggregated table:
+```sql
+CREATE TABLE mydatabase.windowed_temps AS 
+SELECT
+    booking_id,
+    hotel_id,
+    address,
+    visit_date,
+    avg_tmpr_c,
+    FIRST_VALUE(avg_tmpr_c) OVER (
+        PARTITION BY booking_id ORDER BY visit_date
+    ) AS first_temp,
+    LAST_VALUE(avg_tmpr_c) OVER (
+        PARTITION BY booking_id ORDER BY visit_date 
+        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+    ) AS last_temp
+FROM mydatabase.joined_weather;
+```
+## Then optimized it:
+```sql
+OPTIMIZE mydatabase.windowed_temps
+ZORDER BY (booking_id, visit_date);
+```
+## This will be the whole query:
+
+```sql
+OPTIMIZE mydatabase.expedia
+ZORDER BY (booking_id, srch_ci);
+
+OPTIMIZE mydatabase.hotel_weather
+ZORDER BY (id, wthr_date);
+
+CREATE TABLE mydatabase.date_sequence AS 
+SELECT explode(sequence(
+    to_date('2016-10-01'), 
+    to_date('2018-10-06'), 
+    INTERVAL 1 DAY)) AS visit_date;
+
+CREATE TABLE mydatabase.windowed_temps AS 
+SELECT
+    booking_id,
+    hotel_id,
+    address,
+    visit_date,
+    avg_tmpr_c,
+    FIRST_VALUE(avg_tmpr_c) OVER (
+        PARTITION BY booking_id ORDER BY visit_date
+    ) AS first_temp,
+    LAST_VALUE(avg_tmpr_c) OVER (
+        PARTITION BY booking_id ORDER BY visit_date 
+        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+    ) AS last_temp
+FROM mydatabase.joined_weather;
+
+WITH exploded_dates AS (
+    -- we are using the predefined exploded table
+    SELECT 
+        ex.id AS booking_id,
+        ex.hotel_id,
+        ds.visit_date
+    FROM mydatabase.expedia ex
+    JOIN mydatabase.date_sequence ds
+      ON ds.visit_date BETWEEN CAST(ex.srch_ci AS DATE) AND CAST(ex.srch_co AS DATE) - INTERVAL 1 DAY
+    WHERE DATEDIFF(ex.srch_co, ex.srch_ci) BETWEEN 7 AND 30
+),
+joined_weather AS (
+    -- efficient ZORDER optimized JOIN
+    SELECT 
+        ed.booking_id,
+        ed.hotel_id,
+        ed.visit_date,
+        hw.avg_tmpr_c,
+        hw.address
+    FROM exploded_dates ed
+    LEFT JOIN mydatabase.hotel_weather hw
+      ON ed.hotel_id = hw.id 
+         AND hw.wthr_date = ed.visit_date
+    WHERE hw.avg_tmpr_c IS NOT NULL
+),
+windowed_temps AS (
+    -- predefined window table is used here
+    SELECT
+        booking_id,
+        hotel_id,
+        address,
+        visit_date,
+        avg_tmpr_c,
+        FIRST_VALUE(avg_tmpr_c) OVER (
+            PARTITION BY booking_id ORDER BY visit_date
+        ) AS first_temp,
+        LAST_VALUE(avg_tmpr_c) OVER (
+            PARTITION BY booking_id ORDER BY visit_date 
+            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+        ) AS last_temp
+    FROM joined_weather
+    ORDER BY booking_id, visit_date 
+),
+temp_calculations AS (
+    SELECT
+        booking_id,
+        hotel_id,
+        address,
+        MIN(visit_date) AS first_day,
+        MAX(visit_date) AS last_day,
+        ROUND(last_temp - first_temp, 2) AS temp_trend,
+        ROUND(AVG(avg_tmpr_c), 2) AS avg_temperature
+    FROM windowed_temps
+    GROUP BY booking_id, hotel_id, address, first_temp, last_temp
+)
+SELECT *
+FROM temp_calculations
+WHERE temp_trend IS NOT NULL
+  AND avg_temperature IS NOT NULL
+  AND DATEDIFF(last_day, first_day) >= 7
+ORDER BY ABS(temp_trend) DESC;
+
+
+```
+
 
 
