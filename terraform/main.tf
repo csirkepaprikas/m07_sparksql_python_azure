@@ -1,6 +1,6 @@
 provider "databricks" {
-  host  = var.databricks_host
-  token = var.databricks_token
+  host  = var.DATABRICKS_HOST
+  token = var.DATABRICKS_TOKEN
 }
 
 resource "databricks_notebook" "Azure_Spark_SQL" {
@@ -18,8 +18,8 @@ resource "databricks_cluster" "example" {
 }
 
 resource "azurerm_storage_account" "Azure_Spark_SQL_storage" {
-  name                     = var.storage_account_name
-  resource_group_name       = var.resource_group_name
+  name                     = var.STORAGE_ACCOUNT_NAME
+  resource_group_name       = var.RESOURCE_GROUP_NAME
   location                 = "West Europe"
   account_tier              = "Standard"
   account_replication_type = "LRS"
@@ -51,8 +51,8 @@ resource "databricks_job" "run_hotel_weather_query" {
   }
 }
   backend "azurerm" {
-    resource_group_name  = var.resource_group_name
-    storage_account_name = var.storage_account_name
+    resource_group_name  = var.RESOURCE_GROUP_NAME
+    storage_account_name = var.STORAGE_ACCOUNT_NAME
     container_name       = "tfstate"
     key                  = "terraform.tfstate"
 }
