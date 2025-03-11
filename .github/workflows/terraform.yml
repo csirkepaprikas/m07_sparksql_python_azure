@@ -26,12 +26,6 @@ jobs:
       with:
         terraform_version: 1.5.7  
 
-    - name: Azure Login
-      uses: azure/login@v1
-      with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
-        auth-type: "SERVICE_PRINCIPAL"
-
     - name: Initialize Terraform
       run: terraform init
       working-directory: terraform
