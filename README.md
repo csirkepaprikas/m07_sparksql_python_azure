@@ -3,7 +3,7 @@
 ### Balázs Mikes
 
 #### github link:
-https://github.com/csirkepaprikas/m06_sparkbasics_python_azure.git
+https://github.com/csirkepaprikas/m07_sparksql_python_azure.git
 
 This Spark SQL task is designed to introduce me to the world of Databricks and demonstrate how to implement Spark logic using this toolset. The assignment encourages the use of Delta tables, compute clusters, and connection to cloud infrastructure.
 As Databricks is widely used in production environments, it is essential to be familiar with this toolset. Additionally, analyzing the Spark plan and deploying notebooks are valuable skills that will be covered in this homework.
@@ -1229,6 +1229,75 @@ only showing top 10 rows
 1410
 
 ![third_saved](https://github.com/user-attachments/assets/4e5a944c-f740-42d6-bde0-7705bc5f62f3)
+
+## Then headed to the CI/CD task. I chose the GitHub + terraform combination with Azure CLI authentication.
+## Here you can see the terraform.yml workflow file's content:
+```python
+name: Terraform Deployment
+
+on:
+  push:
+    branches:
+      - main  
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  terraform:
+    name: "Terraform Apply"
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: 1.5.7  
+
+    - name: Initialize Terraform
+      run: terraform init
+      working-directory: terraform
+
+    - name: Terraform Plan
+      run: terraform plan
+      working-directory: terraform
+      env:
+        ARM_ACCESS_KEY: ${{ secrets.ARM_ACCESS_KEY }}
+        DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+
+    - name: Terraform Apply
+      if: github.ref == 'refs/heads/main'
+      run: terraform apply -auto-approve
+      env:
+        ARM_ACCESS_KEY: ${{ secrets.ARM_ACCESS_KEY }}
+        DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+```
+## The main.tf file's content, which is quite short due to the Azure CLI authentication:
+```python
+terraform {
+  required_providers {
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = ">= 4.0.0"
+    }
+  }
+}
+
+provider "azurerm" {
+  features {}
+}
+```
+## Secrets were created in GitHub for the terraform operations:
+
+![github_secrets](https://github.com/user-attachments/assets/45474ebc-213b-407e-b335-170ffde02676)
+
 
 
 
