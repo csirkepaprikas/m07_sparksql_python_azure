@@ -1,3 +1,12 @@
+terraform {
+  backend "azurerm" {
+    resource_group_name  = var.RESOURCE_GROUP_NAME
+    storage_account_name = var.STORAGE_ACCOUNT_NAME
+    container_name       = "tfstate"
+    key                  = "terraform.tfstate"
+  }
+}
+
 provider "databricks" {
   host  = var.DATABRICKS_HOST
   token = var.DATABRICKS_TOKEN
@@ -12,7 +21,7 @@ resource "databricks_notebook" "Azure_Spark_SQL" {
 resource "databricks_cluster" "example" {
   cluster_name = "Azure_Spark_SQL_cluster"
   spark_version = "7.3.x-scala2.12"
-  node_type_id  = "i3.xlarge"
+  node_type_id  = "Standard_DS3_v2"
   autotermination_minutes = 30
   num_workers = 1
 }
@@ -50,9 +59,4 @@ resource "databricks_job" "run_hotel_weather_query" {
     timezone_id = "UTC"
   }
 }
-  backend "azurerm" {
-    resource_group_name  = var.RESOURCE_GROUP_NAME
-    storage_account_name = var.STORAGE_ACCOUNT_NAME
-    container_name       = "tfstate"
-    key                  = "terraform.tfstate"
-}
+
