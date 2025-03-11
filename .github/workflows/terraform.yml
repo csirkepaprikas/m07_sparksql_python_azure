@@ -36,9 +36,11 @@ jobs:
 
     - name: Initialize Terraform
       run: terraform init
+      working-directory: terraform
 
     - name: Terraform Plan
       run: terraform plan
+      working-directory: terraform
       env:
         ARM_ACCESS_KEY: ${{ secrets.ARM_ACCESS_KEY }}
         DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
