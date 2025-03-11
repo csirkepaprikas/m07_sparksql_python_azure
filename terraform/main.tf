@@ -1,10 +1,7 @@
 terraform {
-  backend "azurerm" {
-    resource_group_name  = "rg-development-westeurope-6o"
-    storage_account_name = "developmentwesteurope6o"
-    container_name       = "tfstate"
-    key                  = "terraform.tfstate"
-  }
+provider "azurerm" {
+  features {}
+}
 }
 
 provider "databricks" {
