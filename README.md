@@ -1246,7 +1246,7 @@ on:
 permissions:
   id-token: write
   contents: read
-
+  
 jobs:
   terraform:
     name: "Terraform Apply"
@@ -1264,13 +1264,24 @@ jobs:
     - name: Initialize Terraform
       run: terraform init
       working-directory: terraform
+      env:
+        ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
 
     - name: Terraform Plan
-      run: terraform plan
+      run: terraform plan -lock=false
       working-directory: terraform
       env:
-        ARM_ACCESS_KEY: ${{ secrets.ARM_ACCESS_KEY }}
-        DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
 
     - name: Terraform Apply
       if: github.ref == 'refs/heads/main'
@@ -1279,7 +1290,7 @@ jobs:
         ARM_ACCESS_KEY: ${{ secrets.ARM_ACCESS_KEY }}
         DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
 ```
-## The main.tf file's content, which is quite short due to the Azure CLI authentication:
+## The main.tf file's content:
 ```python
 terraform {
   required_providers {
@@ -1287,17 +1298,114 @@ terraform {
       source  = "hashicorp/azurerm"
       version = ">= 4.0.0"
     }
+    databricks = {
+      source  = "databricks/databricks"
+      version = ">= 1.0.0"
+    }
+  }
+
+  backend "azurerm" {
+    resource_group_name  = "rg-development-westeurope-6o"
+    storage_account_name = "developmentwesteurope6o"
+    container_name       = "tfstate"
+    key                  = "terraform.tfstate"
   }
 }
 
 provider "azurerm" {
   features {}
+
+  subscription_id = var.AZURE_SUBSCRIPTION_ID
+  tenant_id       = var.AZURE_TENANT_ID
+  client_id       = var.AZURE_CLIENT_ID
+  client_secret   = var.AZURE_CLIENT_SECRET
+}
+
+provider "databricks" {
+  host  = var.DATABRICKS_HOST
+  token = var.DATABRICKS_TOKEN
+}
+
+resource "databricks_notebook" "Azure_Spark_SQL" {
+  path     = "/Users/balage330@gmail.com/Azure_Spark_SQL"
+  language = "SQL"
+  source   = ""
+}
+
+resource "databricks_cluster" "example" {
+  cluster_name           = "Azure_Spark_SQL_cluster"
+  spark_version          = "7.3.x-scala2.12"
+  node_type_id           = "Standard_DS3_v2"
+  autotermination_minutes = 30
+  num_workers            = 1
+}
+
+resource "azurerm_storage_account" "Azure_Spark_SQL_storage" {
+  name                     = var.STORAGE_ACCOUNT_NAME
+  resource_group_name       = var.RESOURCE_GROUP_NAME
+  location                 = "West Europe"
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+}
+
+resource "azurerm_storage_container" "data" {
+  name                  = "data"
+  storage_account_name  = azurerm_storage_account.Azure_Spark_SQL_storage.name
+  container_access_type = "container"
+}
+
+resource "databricks_job" "run_hotel_weather_query" {
+  name = "run_hotel_weather_query"
+
+  new_cluster {
+    spark_version = "15.4.x-scala2.12"
+    node_type_id  = "Standard_DS3_v2"
+    num_workers   = 2
+  }
+
+  notebook_task {
+    notebook_path = databricks_notebook.Azure_Spark_SQL.path
+  }
+
+  schedule {
+    quartz_cron_expression = "0 0 1 * ? *"
+    timezone_id            = "UTC"
+  }
 }
 ```
 ## Secrets were created in GitHub for the terraform operations:
 
 ![github_secrets](https://github.com/user-attachments/assets/45474ebc-213b-407e-b335-170ffde02676)
 
+## The variables.tf:
+```python
+variable "AZURE_SUBSCRIPTION_ID" {
+  type = string
+}
+
+variable "AZURE_TENANT_ID" {
+  type = string
+}
+
+variable "AZURE_CLIENT_ID" {
+  type = string
+}
+
+variable "AZURE_CLIENT_SECRET" {
+  type = string
+}
+
+variable "DATABRICKS_HOST" {
+  type = string
+}
+
+variable "DATABRICKS_TOKEN" {
+  type = string
+}
+```
+## The progress of the terraform deployment, which stalls unfortunately
+
+![tf_depl](https://github.com/user-attachments/assets/42e84697-a10e-44b0-8a47-190d79849c00)
 
 
 
