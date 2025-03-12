@@ -45,7 +45,7 @@ jobs:
         ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
         SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
         TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-        CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
         CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
 
     - name: Terraform Apply
