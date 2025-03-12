@@ -3,7 +3,7 @@ name: Terraform Deployment
 on:
   push:
     branches:
-      - main  
+      - main
   pull_request:
     branches:
       - main
@@ -11,7 +11,7 @@ on:
 permissions:
   id-token: write
   contents: read
-  
+
 jobs:
   terraform:
     name: "Terraform Apply"
@@ -24,7 +24,7 @@ jobs:
     - name: Set up Terraform
       uses: hashicorp/setup-terraform@v2
       with:
-        terraform_version: 1.5.7  
+        terraform_version: 1.5.7
 
     - name: Initialize Terraform
       run: terraform init
@@ -47,6 +47,10 @@ jobs:
         TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
         AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
         CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+        DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        STORAGE_ACCOUNT_NAME: ${{ secrets.STORAGE_ACCOUNT_NAME }}
+        RESOURCE_GROUP_NAME: ${{ secrets.RESOURCE_GROUP_NAME }}
 
     - name: Terraform Apply
       if: github.ref == 'refs/heads/main'
