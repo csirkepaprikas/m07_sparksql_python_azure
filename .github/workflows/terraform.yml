@@ -38,14 +38,7 @@ jobs:
     - name: Terraform Plan
       run: terraform plan -lock=false
       working-directory: terraform
-      env:
-        ARM_ACCESS_KEY: ${{ secrets.ARM_ACCESS_KEY }}
-        DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
-        DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
-        ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-        ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-        ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-        ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+
 
     - name: Terraform Apply
       if: github.ref == 'refs/heads/main'
