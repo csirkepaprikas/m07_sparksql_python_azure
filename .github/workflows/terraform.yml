@@ -36,7 +36,7 @@ jobs:
         ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
 
     - name: Terraform Plan
-      run: terraform plan
+      run: terraform plan -lock=false
       working-directory: terraform
       env:
         ARM_ACCESS_KEY: ${{ secrets.ARM_ACCESS_KEY }}
