@@ -21,9 +21,6 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Enable Debugging
-      uses: mxschmitt/action-tmate@v3
-
     - name: Set up Terraform
       uses: hashicorp/setup-terraform@v2
       with:
