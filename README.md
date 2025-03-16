@@ -2209,7 +2209,8 @@ df_third.write.format("parquet") \
 
 ## The created partitioned parquet files in the destination data container:
 
-![job_result_container](https://github.com/user-attachments/assets/3b30cf0b-8a83-4cf4-a51b-90a47df9db29)
+![job_result_container](https://github.com/user-attachments/assets/9537dd6c-21c4-4804-841f-ddea4fad9e37)
+
 
 ## You can see the screenshots about the jobs and runs:
 
