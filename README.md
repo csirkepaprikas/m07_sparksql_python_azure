@@ -2203,7 +2203,8 @@ df_third.write.format("parquet") \
 ```
 ## Here you can see the successful second job:
 
-![2nd_job_succ](https://github.com/user-attachments/assets/8bb1542e-203b-46c1-ab57-f748b83a48ad)
+![2nd_job_succ](https://github.com/user-attachments/assets/68ba7917-0508-4874-a5a5-34b839b0b3cb)
+
 
 ## The created partitioned parquet files in the destination data container:
 
