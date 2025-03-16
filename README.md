@@ -1,4 +1,4 @@
-# Spark SQL Homework
+![1ST_JOB_DELTA_TABLES](https://github.com/user-attachments/assets/fad40838-d2bc-444d-8bc0-329e5289e294)![1ST_JOB_DELTA_TABLES](https://github.com/user-attachments/assets/ddab335e-03ac-45f3-aedc-9e663c316a71)![1ST_JOB_RUNNING](https://github.com/user-attachments/assets/4547a2a4-fc50-46a7-a2c2-54243dda086f)# Spark SQL Homework
 
 ### Balázs Mikes
 
@@ -1246,8 +1246,8 @@ terraform {
   }
 
   backend "azurerm" {
-    resource_group_name  = ""
-    storage_account_name = ""
+    resource_group_name  = "ro"
+    storage_account_name = "deo"
     container_name       = "tfstate"
     key                  = "terraform.tfstate"
   }
@@ -1267,17 +1267,25 @@ provider "databricks" {
   token = var.DATABRICKS_TOKEN
 }
 
-resource "databricks_notebook" "Azure_Spark_SQL" {
-  path     = "/Users/balage330@gmail.com/Azure_Spark_SQL"
-  language = "SQL"
+
+data "databricks_spark_version" "latest_lts" {
+  long_term_support = true
 }
 
-resource "databricks_cluster" "cicd" {
-  cluster_name           = "Azure_Spark_SQL_cluster"
-  spark_version          = "7.3.x-scala2.12"
+resource "databricks_cluster" "cicd1" {
+  cluster_name           = "Azure_Spark_SQL"
+  spark_version          = data.databricks_spark_version.latest_lts.id 
   node_type_id           = "Standard_DS3_v2"
   autotermination_minutes = 30
-  num_workers            = 1
+
+  spark_conf = {
+    "spark.databricks.cluster.profile" = "singleNode"
+    "spark.master"                     = "local[*]"
+  }
+
+  custom_tags = {
+    "ResourceClass" = "SingleNode"
+  }
 }
 
 resource "azurerm_storage_account" "Azure_Spark_SQL_storage" {
@@ -1294,26 +1302,56 @@ resource "azurerm_storage_container" "data" {
   container_access_type = "container"
 }
 
-resource "databricks_job" "run_hotel_weather_query" {
-  name = "run_hotel_weather_query"
 
-  new_cluster {
-    spark_version = "15.4.x-scala2.12"
-    node_type_id  = "Standard_DS3_v2"
-    num_workers   = 2
-  }
+resource "databricks_notebook" "preconfig" {
+  path     = "/Users/balm/preconfig"
+  language = "PYTHON"
+  source   = "${path.module}/preconfig.py"
+}
 
-  notebook_task {
-    notebook_path = databricks_notebook.Azure_Spark_SQL.path
-  }
+resource "databricks_notebook" "saving" {
+  path     = "/Users/baim/saving"
+  language = "PYTHON"
+  source   = "${path.module}/saving.py"
+}
 
-  schedule {
-    quartz_cron_expression = "0 0 1 * ? *"
-    timezone_id            = "UTC"
+resource "databricks_job" "run_preconfig" {
+  name = "run preconfig"
+
+  task {
+    task_key = "preconfig"
+    
+    notebook_task {
+      notebook_path = databricks_notebook.preconfig.path
+    }
+
+    existing_cluster_id = databricks_cluster.cicd1.id
   }
 }
+
+resource "databricks_job" "run_saving" {
+  name = "run saving"
+
+  task {
+    task_key = "saving"
+    
+    notebook_task {
+      notebook_path = databricks_notebook.saving.path
+    }
+
+    existing_cluster_id = databricks_cluster.cicd1.id
+  }
+}
+
+output "job_ids" {
+  value = {
+    preconfig = databricks_job.run_preconfig.id
+    saving = databricks_job.run_saving.id
+  }
+}
+
 ```
-## And a variables.tf file:
+## Here is the variables.tf file:
 ```python
 variable "AZURE_SUBSCRIPTION_ID" {}
 variable "AZURE_TENANT_ID" {}
@@ -1341,7 +1379,11 @@ plan:
 # Terraform apply
 apply:
 	@echo "Applying Terraform changes..."
-	terraform apply -var-file=terraform.tfvars -auto-approve
+	terraform apply -var-file=terraform.tfvars -lock=false -auto-approve
+
+output job_ids:
+	@echo "the job IDs are..."
+	terraform output job_ids
 
 # Terraform deletion
 destroy:
@@ -1381,144 +1423,54 @@ C:\ProgramData\chocolatey\bin\make.exe -f C:/data_eng/házi/2/Makefile -C C:\dat
 make: Entering directory 'C:/data_eng/hßzi/2'
 "Generating Terraform plan..."
 terraform plan -var-file=terraform.tfvars -lock=false
+data.databricks_spark_version.latest_lts: Reading...
+databricks_notebook.simple_1: Refreshing state... [id=/Users/balag
+/simple_1]
+databricks_job.run_simple_1: Refreshing state... [id=73]
+data.databricks_spark_version.latest_lts: Read complete after 1s [id=15.4.x-scal
+a2.12]
+databricks_cluster.cicd1: Refreshing state... [id=0316-125836-v3rso6m0]
+azurerm_storage_account.Azure_Spark_SQL_storage: Refreshing state... [id=/subscr
+iptions/69d7689b/resourceGroups/rg-development-weste
+urope-6o/providers/Microsoft.Storage/storageAccounts/developmentwesteurope6o]
+azurerm_storage_container.data: Refreshing state... [id=https://developmentweste
+urope6o.blob.core.windows.net/data]
+
+Note: Objects have changed outside of Terraform
+
+Terraform detected the following changes made outside of Terraform since the
+last "terraform apply" which may have affected this plan:
+
+  # databricks_cluster.cicd1 has been deleted
+  - resource "databricks_cluster" "cicd1" {
+      - id                           = "0316-125836-v3rso6m0" -> null
+        # (17 unchanged attributes hidden)
+
+        # (1 unchanged block hidden)
+    }
+
+
+Unless you have made equivalent changes to your configuration, or ignored the
+relevant attributes using ignore_changes, the following plan may include
+actions to undo or respond to these changes.
+
+───────────────────────────────────────────────────────────────────────────────
 
 Terraform used the selected providers to generate the following execution plan.
 Resource actions are indicated with the following symbols:
   + create
+  - destroy
 
 Terraform will perform the following actions:
 
-  # azurerm_storage_account.Azure_Spark_SQL_storage will be created
-  + resource "azurerm_storage_account" "Azure_Spark_SQL_storage" {
-      + access_tier                        = (known after apply)
-      + account_kind                       = "StorageV2"
-      + account_replication_type           = "LRS"
-      + account_tier                       = "Standard"
-      + allow_nested_items_to_be_public    = true
-      + cross_tenant_replication_enabled   = false
-      + default_to_oauth_authentication    = false
-      + dns_endpoint_type                  = "Standard"
-      + https_traffic_only_enabled         = true
-      + id                                 = (known after apply)
-      + infrastructure_encryption_enabled  = false
-      + is_hns_enabled                     = false
-      + large_file_share_enabled           = (known after apply)
-      + local_user_enabled                 = true
-      + location                           = "westeurope"
-      + min_tls_version                    = "TLS1_2"
-      + name                               = "developmentwesteurope6o"
-      + nfsv3_enabled                      = false
-      + primary_access_key                 = (sensitive value)
-      + primary_blob_connection_string     = (sensitive value)
-      + primary_blob_endpoint              = (known after apply)
-      + primary_blob_host                  = (known after apply)
-      + primary_blob_internet_endpoint     = (known after apply)
-      + primary_blob_internet_host         = (known after apply)
-      + primary_blob_microsoft_endpoint    = (known after apply)
-      + primary_blob_microsoft_host        = (known after apply)
-      + primary_connection_string          = (sensitive value)
-      + primary_dfs_endpoint               = (known after apply)
-      + primary_dfs_host                   = (known after apply)
-      + primary_dfs_internet_endpoint      = (known after apply)
-      + primary_dfs_internet_host          = (known after apply)
-      + primary_dfs_microsoft_endpoint     = (known after apply)
-      + primary_dfs_microsoft_host         = (known after apply)
-      + primary_file_endpoint              = (known after apply)
-      + primary_file_host                  = (known after apply)
-      + primary_file_internet_endpoint     = (known after apply)
-      + primary_file_internet_host         = (known after apply)
-      + primary_file_microsoft_endpoint    = (known after apply)
-      + primary_file_microsoft_host        = (known after apply)
-      + primary_location                   = (known after apply)
-      + primary_queue_endpoint             = (known after apply)
-      + primary_queue_host                 = (known after apply)
-      + primary_queue_microsoft_endpoint   = (known after apply)
-      + primary_queue_microsoft_host       = (known after apply)
-      + primary_table_endpoint             = (known after apply)
-      + primary_table_host                 = (known after apply)
-      + primary_table_microsoft_endpoint   = (known after apply)
-      + primary_table_microsoft_host       = (known after apply)
-      + primary_web_endpoint               = (known after apply)
-      + primary_web_host                   = (known after apply)
-      + primary_web_internet_endpoint      = (known after apply)
-      + primary_web_internet_host          = (known after apply)
-      + primary_web_microsoft_endpoint     = (known after apply)
-      + primary_web_microsoft_host         = (known after apply)
-      + public_network_access_enabled      = true
-      + queue_encryption_key_type          = "Service"
-      + resource_group_name                = ""
-      + secondary_access_key               = (sensitive value)
-      + secondary_blob_connection_string   = (sensitive value)
-      + secondary_blob_endpoint            = (known after apply)
-      + secondary_blob_host                = (known after apply)
-      + secondary_blob_internet_endpoint   = (known after apply)
-      + secondary_blob_internet_host       = (known after apply)
-      + secondary_blob_microsoft_endpoint  = (known after apply)
-      + secondary_blob_microsoft_host      = (known after apply)
-      + secondary_connection_string        = (sensitive value)
-      + secondary_dfs_endpoint             = (known after apply)
-      + secondary_dfs_host                 = (known after apply)
-      + secondary_dfs_internet_endpoint    = (known after apply)
-      + secondary_dfs_internet_host        = (known after apply)
-      + secondary_dfs_microsoft_endpoint   = (known after apply)
-      + secondary_dfs_microsoft_host       = (known after apply)
-      + secondary_file_endpoint            = (known after apply)
-      + secondary_file_host                = (known after apply)
-      + secondary_file_internet_endpoint   = (known after apply)
-      + secondary_file_internet_host       = (known after apply)
-      + secondary_file_microsoft_endpoint  = (known after apply)
-      + secondary_file_microsoft_host      = (known after apply)
-      + secondary_location                 = (known after apply)
-      + secondary_queue_endpoint           = (known after apply)
-      + secondary_queue_host               = (known after apply)
-      + secondary_queue_microsoft_endpoint = (known after apply)
-      + secondary_queue_microsoft_host     = (known after apply)
-      + secondary_table_endpoint           = (known after apply)
-      + secondary_table_host               = (known after apply)
-      + secondary_table_microsoft_endpoint = (known after apply)
-      + secondary_table_microsoft_host     = (known after apply)
-      + secondary_web_endpoint             = (known after apply)
-      + secondary_web_host                 = (known after apply)
-      + secondary_web_internet_endpoint    = (known after apply)
-      + secondary_web_internet_host        = (known after apply)
-      + secondary_web_microsoft_endpoint   = (known after apply)
-      + secondary_web_microsoft_host       = (known after apply)
-      + sftp_enabled                       = false
-      + shared_access_key_enabled          = true
-      + table_encryption_key_type          = "Service"
-
-      + blob_properties (known after apply)
-
-      + network_rules (known after apply)
-
-      + queue_properties (known after apply)
-
-      + routing (known after apply)
-
-      + share_properties (known after apply)
-
-      + static_website (known after apply)
-    }
-
-  # azurerm_storage_container.data will be created
-  + resource "azurerm_storage_container" "data" {
-      + container_access_type             = "container"
-      + default_encryption_scope          = (known after apply)
-      + encryption_scope_override_enabled = true
-      + has_immutability_policy           = (known after apply)
-      + has_legal_hold                    = (known after apply)
-      + id                                = (known after apply)
-      + metadata                          = (known after apply)
-      + name                              = "data"
-      + resource_manager_id               = (known after apply)
-      + storage_account_name              = ""
-    }
-
-  # databricks_cluster.cicd will be created
-  + resource "databricks_cluster" "cicd" {
+  # databricks_cluster.cicd1 will be created
+  + resource "databricks_cluster" "cicd1" {
       + autotermination_minutes      = 30
       + cluster_id                   = (known after apply)
-      + cluster_name                 = "Azure_Spark_SQL_cluster"
+      + cluster_name                 = "Azure_Spark_SQL"
+      + custom_tags                  = {
+          + "ResourceClass" = "SingleNode"
+        }
       + default_tags                 = (known after apply)
       + driver_instance_pool_id      = (known after apply)
       + driver_node_type_id          = (known after apply)
@@ -1526,71 +1478,185 @@ Terraform will perform the following actions:
       + enable_local_disk_encryption = (known after apply)
       + id                           = (known after apply)
       + node_type_id                 = "Standard_DS3_v2"
-      + num_workers                  = 1
-      + spark_version                = "7.3.x-scala2.12"
+      + num_workers                  = 0
+      + spark_conf                   = {
+          + "spark.databricks.cluster.profile" = "singleNode"
+          + "spark.master"                     = "local[*]"
+        }
+      + spark_version                = "15.4.x-scala2.12"
       + state                        = (known after apply)
       + url                          = (known after apply)
     }
 
-  # databricks_job.run_hotel_weather_query will be created
-  + resource "databricks_job" "run_hotel_weather_query" {
+  # databricks_job.run_preconfig will be created
+  + resource "databricks_job" "run_preconfig" {
       + always_running      = false
       + control_run_state   = false
       + format              = (known after apply)
       + id                  = (known after apply)
       + max_concurrent_runs = 1
-      + name                = "run_hotel_weather_query"
+      + name                = "run preconfig"
       + url                 = (known after apply)
-
-      + new_cluster {
-          + driver_instance_pool_id      = (known after apply)
-          + driver_node_type_id          = (known after apply)
-          + enable_elastic_disk          = (known after apply)
-          + enable_local_disk_encryption = (known after apply)
-          + node_type_id                 = "Standard_DS3_v2"
-          + num_workers                  = 2
-          + spark_version                = "15.4.x-scala2.12"
-        }
-
-      + notebook_task {
-          + notebook_path = "/Users/balage330@gmail.com/Azure_Spark_SQL"
-        }
 
       + run_as (known after apply)
 
-      + schedule {
-          + pause_status           = "UNPAUSED"
-          + quartz_cron_expression = "0 0 1 * ? *"
-          + timezone_id            = "UTC"
+      + task {
+          + existing_cluster_id = (known after apply)
+          + retry_on_timeout    = (known after apply)
+          + task_key            = "preconfig"
+
+          + notebook_task {
+              + notebook_path = "/Users/b.com/preconfig"
+            }
         }
     }
 
-  # databricks_notebook.Azure_Spark_SQL will be created
-  + resource "databricks_notebook" "Azure_Spark_SQL" {
+  # databricks_job.run_saving will be created
+  + resource "databricks_job" "run_saving" {
+      + always_running      = false
+      + control_run_state   = false
+      + format              = (known after apply)
+      + id                  = (known after apply)
+      + max_concurrent_runs = 1
+      + name                = "run saving"
+      + url                 = (known after apply)
+
+      + run_as (known after apply)
+
+      + task {
+          + existing_cluster_id = (known after apply)
+          + retry_on_timeout    = (known after apply)
+          + task_key            = "saving"
+
+          + notebook_task {
+              + notebook_path = "/Users/balage330@gmail.com/saving"
+            }
+        }
+    }
+
+  # databricks_job.run_simple_1 will be destroyed
+  # (because databricks_job.run_simple_1 is not in configuration)
+  - resource "databricks_job" "run_simple_1" {
+      - always_running            = false -> null
+      - control_run_state         = false -> null
+      - format                    = "MULTI_TASK" -> null
+      - id                        = "7313" -> null
+      - max_concurrent_runs       = 1 -> null
+      - max_retries               = 0 -> null
+      - min_retry_interval_millis = 0 -> null
+      - name                      = "Run Simple SQL Notebook" -> null
+      - retry_on_timeout          = false -> null
+      - timeout_seconds           = 0 -> null
+      - url                       = "https://adb-51228788865048.8.azuredatabrick
+s.net/#job/706668043510313" -> null
+
+      - email_notifications {
+          - no_alert_for_skipped_runs              = false -> null
+          - on_duration_warning_threshold_exceeded = [] -> null
+          - on_failure                             = [] -> null
+          - on_start                               = [] -> null
+          - on_streaming_backlog_exceeded          = [] -> null
+          - on_success                             = [] -> null
+        }
+
+      - run_as {
+          - user_name              = "balom" -> null
+            # (1 unchanged attribute hidden)
+        }
+
+      - task {
+          - disable_auto_optimization = false -> null
+          - existing_cluster_id       = "031so6m0" -> null
+          - max_retries               = 0 -> null
+          - min_retry_interval_millis = 0 -> null
+          - retry_on_timeout          = false -> null
+          - run_if                    = "ALL_SUCCESS" -> null
+          - task_key                  = "simple_1_task" -> null
+          - timeout_seconds           = 0 -> null
+            # (3 unchanged attributes hidden)
+
+          - email_notifications {
+              - no_alert_for_skipped_runs              = false -> null
+              - on_duration_warning_threshold_exceeded = [] -> null
+              - on_failure                             = [] -> null
+              - on_start                               = [] -> null
+              - on_streaming_backlog_exceeded          = [] -> null
+              - on_success                             = [] -> null
+            }
+
+          - notebook_task {
+              - base_parameters = {} -> null
+              - notebook_path   = "/Users/balage330@gmail.com/simple_1" -> null
+              - source          = "WORKSPACE" -> null
+                # (1 unchanged attribute hidden)
+            }
+        }
+
+      - webhook_notifications {
+        }
+    }
+
+  # databricks_notebook.preconfig will be created
+  + resource "databricks_notebook" "preconfig" {
       + format         = (known after apply)
       + id             = (known after apply)
-      + language       = "SQL"
+      + language       = "PYTHON"
       + md5            = "different"
       + object_id      = (known after apply)
       + object_type    = (known after apply)
-      + path           = "/Users/balage330@gmail.com/Azure_Spark_SQL"
+      + path           = "/Users/balage330@gmail.com/preconfig"
+      + source         = "./preconfig.py"
       + url            = (known after apply)
       + workspace_path = (known after apply)
     }
 
-Plan: 5 to add, 0 to change, 0 to destroy.
+  # databricks_notebook.saving will be created
+  + resource "databricks_notebook" "saving" {
+      + format         = (known after apply)
+      + id             = (known after apply)
+      + language       = "PYTHON"
+      + md5            = "different"
+      + object_id      = (known after apply)
+      + object_type    = (known after apply)
+      + path           = "/Users/balage330@gmail.com/saving"
+      + source         = "./saving.py"
+      + url            = (known after apply)
+      + workspace_path = (known after apply)
+    }
+
+  # databricks_notebook.simple_1 will be destroyed
+  # (because databricks_notebook.simple_1 is not in configuration)
+  - resource "databricks_notebook" "simple_1" {
+      - format         = "SOURCE" -> null
+      - id             = "/Users/bam/simple_1" -> null
+      - language       = "SQL" -> null
+      - md5            = "12f15c25fbe89dcd196e6d87ce99b34d" -> null
+      - object_id      = 557163049195297 -> null
+      - object_type    = "NOTEBOOK" -> null
+      - path           = "/Users/balam/simple_1" -> null
+      - source         = "./simple.sql" -> null
+      - url            = "https://icks.net/#work
+space/Users/balage330@gmail.com/simple_1" -> null
+      - workspace_path = "/Workspace/Users/bacom/simple_1" -> null
+    }
+
+Plan: 5 to add, 0 to change, 2 to destroy.
+
+Changes to Outputs:
+  + job_ids = {
+      + preconfig = (known after apply)
+      + saving    = (known after apply)
+    }
 ╷
 │ Warning: Argument is deprecated
 │
 │   with azurerm_storage_container.data,
-│   on main.tf line 58, in resource "azurerm_storage_container" "data":
-│   58:   storage_account_name  = azurerm_storage_account.Azure_Spark_SQL_storag
+│   on main.tf line 66, in resource "azurerm_storage_container" "data":
+│   66:   storage_account_name  = azurerm_storage_account.Azure_Spark_SQL_storag
 e.name
 │
 │ the `storage_account_name` property has been deprecated in favour of
 │ `storage_account_id` and will be removed in version 5.0 of the Provider.
-│
-│ (and one more similar warning elsewhere)
 ╵
 
 ───────────────────────────────────────────────────────────────────────────────
@@ -1601,3 +1667,566 @@ make: Leaving directory 'C:/data_eng/h�zi/2'
 
 Process finished with exit code 0
 ```
+## The result of the successful apply:
+```python
+C:\ProgramData\chocolatey\bin\make.exe -f C:/data_eng/házi/2/Makefile -C C:\data_eng\házi\2 apply
+make: Entering directory 'C:/data_eng/hßzi/2'
+"Applying Terraform changes..."
+terraform apply -var-file=terraform.tfvars -lock=false -auto-approve
+data.databricks_spark_version.latest_lts: Reading...
+databricks_notebook.simple_1: Refreshing state... [id=/Users/baom
+/simple_1]
+databricks_job.run_simple_1: Refreshing state... [id=703]
+data.databricks_spark_version.latest_lts: Still reading... [10s elapsed]
+data.databricks_spark_version.latest_lts: Read complete after 15s [id=15.4.x-sca
+la2.12]
+databricks_cluster.cicd1: Refreshing state... [id=0316-125836-v3rso6m0]
+azurerm_storage_account.Azure_Spark_SQL_storage: Refreshing state... [id=/subscr
+iptions/69d1cd19689b/resourceGroups/rg-development-weste
+urope-6o/providers/Microsoft.Storage/storageAccounts/developmentwesteurope6o]
+azurerm_storage_container.data: Refreshing state... [id=https://developmentweste
+urope6o.blob.core.windows.net/data]
+
+Note: Objects have changed outside of Terraform
+
+Terraform detected the following changes made outside of Terraform since the
+last "terraform apply" which may have affected this plan:
+
+  # databricks_cluster.cicd1 has been deleted
+  - resource "databricks_cluster" "cicd1" {
+      - id                           = "0316m0" -> null
+        # (17 unchanged attributes hidden)
+
+        # (1 unchanged block hidden)
+    }
+
+
+Unless you have made equivalent changes to your configuration, or ignored the
+relevant attributes using ignore_changes, the following plan may include
+actions to undo or respond to these changes.
+
+───────────────────────────────────────────────────────────────────────────────
+
+Terraform used the selected providers to generate the following execution plan.
+Resource actions are indicated with the following symbols:
+  + create
+  - destroy
+
+Terraform will perform the following actions:
+
+  # databricks_cluster.cicd1 will be created
+  + resource "databricks_cluster" "cicd1" {
+      + autotermination_minutes      = 30
+      + cluster_id                   = (known after apply)
+      + cluster_name                 = "Azure_Spark_SQL"
+      + custom_tags                  = {
+          + "ResourceClass" = "SingleNode"
+        }
+      + default_tags                 = (known after apply)
+      + driver_instance_pool_id      = (known after apply)
+      + driver_node_type_id          = (known after apply)
+      + enable_elastic_disk          = (known after apply)
+      + enable_local_disk_encryption = (known after apply)
+      + id                           = (known after apply)
+      + node_type_id                 = "Standard_DS3_v2"
+      + num_workers                  = 0
+      + spark_conf                   = {
+          + "spark.databricks.cluster.profile" = "singleNode"
+          + "spark.master"                     = "local[*]"
+        }
+      + spark_version                = "15.4.x-scala2.12"
+      + state                        = (known after apply)
+      + url                          = (known after apply)
+    }
+
+  # databricks_job.run_preconfig will be created
+  + resource "databricks_job" "run_preconfig" {
+      + always_running      = false
+      + control_run_state   = false
+      + format              = (known after apply)
+      + id                  = (known after apply)
+      + max_concurrent_runs = 1
+      + name                = "run preconfig"
+      + url                 = (known after apply)
+
+      + run_as (known after apply)
+
+      + task {
+          + existing_cluster_id = (known after apply)
+          + retry_on_timeout    = (known after apply)
+          + task_key            = "preconfig"
+
+          + notebook_task {
+              + notebook_path = "/Users/balaom/preconfig"
+            }
+        }
+    }
+
+  # databricks_job.run_saving will be created
+  + resource "databricks_job" "run_saving" {
+      + always_running      = false
+      + control_run_state   = false
+      + format              = (known after apply)
+      + id                  = (known after apply)
+      + max_concurrent_runs = 1
+      + name                = "run saving"
+      + url                 = (known after apply)
+
+      + run_as (known after apply)
+
+      + task {
+          + existing_cluster_id = (known after apply)
+          + retry_on_timeout    = (known after apply)
+          + task_key            = "saving"
+
+          + notebook_task {
+              + notebook_path = "/Users/balage330@gmail.com/saving"
+            }
+        }
+    }
+
+  # databricks_job.run_simple_1 will be destroyed
+  # (because databricks_job.run_simple_1 is not in configuration)
+  - resource "databricks_job" "run_simple_1" {
+      - always_running            = false -> null
+      - control_run_state         = false -> null
+      - format                    = "MULTI_TASK" -> null
+      - id                        = "706668043510313" -> null
+      - max_concurrent_runs       = 1 -> null
+      - max_retries               = 0 -> null
+      - min_retry_interval_millis = 0 -> null
+      - name                      = "Run Simple SQL Notebook" -> null
+      - retry_on_timeout          = false -> null
+      - timeout_seconds           = 0 -> null
+      - url                       = "https://redatabrick
+s.net/#job/706668043510313" -> null
+
+      - email_notifications {
+          - no_alert_for_skipped_runs              = false -> null
+          - on_duration_warning_threshold_exceeded = [] -> null
+          - on_failure                             = [] -> null
+          - on_start                               = [] -> null
+          - on_streaming_backlog_exceeded          = [] -> null
+          - on_success                             = [] -> null
+        }
+
+      - run_as {
+          - user_name              = "balom" -> null
+            # (1 unchanged attribute hidden)
+        }
+
+      - task {
+          - disable_auto_optimization = false -> null
+          - existing_cluster_id       = "0316-m0" -> null
+          - max_retries               = 0 -> null
+          - min_retry_interval_millis = 0 -> null
+          - retry_on_timeout          = false -> null
+          - run_if                    = "ALL_SUCCESS" -> null
+          - task_key                  = "simple_1_task" -> null
+          - timeout_seconds           = 0 -> null
+            # (3 unchanged attributes hidden)
+
+          - email_notifications {
+              - no_alert_for_skipped_runs              = false -> null
+              - on_duration_warning_threshold_exceeded = [] -> null
+              - on_failure                             = [] -> null
+              - on_start                               = [] -> null
+              - on_streaming_backlog_exceeded          = [] -> null
+              - on_success                             = [] -> null
+            }
+
+          - notebook_task {
+              - base_parameters = {} -> null
+              - notebook_path   = "/Users/balm/simple_1" -> null
+              - source          = "WORKSPACE" -> null
+                # (1 unchanged attribute hidden)
+            }
+        }
+
+      - webhook_notifications {
+        }
+    }
+
+  # databricks_notebook.preconfig will be created
+  + resource "databricks_notebook" "preconfig" {
+      + format         = (known after apply)
+      + id             = (known after apply)
+      + language       = "PYTHON"
+      + md5            = "different"
+      + object_id      = (known after apply)
+      + object_type    = (known after apply)
+      + path           = "/Users/baom/preconfig"
+      + source         = "./preconfig.py"
+      + url            = (known after apply)
+      + workspace_path = (known after apply)
+    }
+
+  # databricks_notebook.saving will be created
+  + resource "databricks_notebook" "saving" {
+      + format         = (known after apply)
+      + id             = (known after apply)
+      + language       = "PYTHON"
+      + md5            = "different"
+      + object_id      = (known after apply)
+      + object_type    = (known after apply)
+      + path           = "/Users/bam/saving"
+      + source         = "./saving.py"
+      + url            = (known after apply)
+      + workspace_path = (known after apply)
+    }
+
+  # databricks_notebook.simple_1 will be destroyed
+  # (because databricks_notebook.simple_1 is not in configuration)
+  - resource "databricks_notebook" "simple_1" {
+      - format         = "SOURCE" -> null
+      - id             = "/Users/balage330@gmail.com/simple_1" -> null
+      - language       = "SQL" -> null
+      - md5            = "12f187ce99b34d" -> null
+      - object_id      = 557163049195297 -> null
+      - object_type    = "NOTEBOOK" -> null
+      - path           = "/Users/bom/simple_1" -> null
+      - source         = "./simple.sql" -> null
+      - url            = "https://acks.net/#work
+space/Users/balage330@gmail.com/simple_1" -> null
+      - workspace_path = "/Workspace/Users/balage330@gmail.com/simple_1" -> null
+    }
+
+Plan: 5 to add, 0 to change, 2 to destroy.
+
+Changes to Outputs:
+  + job_ids = {
+      + preconfig = (known after apply)
+      + saving    = (known after apply)
+    }
+databricks_notebook.saving: Creating...
+databricks_notebook.preconfig: Creating...
+databricks_job.run_simple_1: Destroying... [id=70313]
+databricks_job.run_simple_1: Destruction complete after 1s
+databricks_notebook.simple_1: Destroying... [id=/Users/bom/simpl
+e_1]
+databricks_cluster.cicd1: Creating...
+databricks_notebook.preconfig: Creation complete after 1s [id=/Users/bal
+mail.com/preconfig]
+databricks_notebook.saving: Creation complete after 1s [id=/Users/
+l.com/saving]
+databricks_notebook.simple_1: Destruction complete after 0s
+databricks_cluster.cicd1: Still creating... [10s elapsed]
+databricks_cluster.cicd1: Still creating... [20s elapsed]
+databricks_cluster.cicd1: Still creating... [30s elapsed]
+databricks_cluster.cicd1: Still creating... [40s elapsed]
+databricks_cluster.cicd1: Still creating... [50s elapsed]
+databricks_cluster.cicd1: Still creating... [1m0s elapsed]
+databricks_cluster.cicd1: Still creating... [1m10s elapsed]
+databricks_cluster.cicd1: Still creating... [1m20s elapsed]
+databricks_cluster.cicd1: Still creating... [1m30s elapsed]
+databricks_cluster.cicd1: Still creating... [1m40s elapsed]
+databricks_cluster.cicd1: Still creating... [1m50s elapsed]
+databricks_cluster.cicd1: Still creating... [2m0s elapsed]
+databricks_cluster.cicd1: Still creating... [2m10s elapsed]
+databricks_cluster.cicd1: Still creating... [2m20s elapsed]
+databricks_cluster.cicd1: Still creating... [2m30s elapsed]
+databricks_cluster.cicd1: Still creating... [2m40s elapsed]
+databricks_cluster.cicd1: Still creating... [2m50s elapsed]
+databricks_cluster.cicd1: Still creating... [3m0s elapsed]
+databricks_cluster.cicd1: Still creating... [3m10s elapsed]
+databricks_cluster.cicd1: Still creating... [3m20s elapsed]
+databricks_cluster.cicd1: Still creating... [3m30s elapsed]
+databricks_cluster.cicd1: Still creating... [3m40s elapsed]
+databricks_cluster.cicd1: Still creating... [3m50s elapsed]
+databricks_cluster.cicd1: Creation complete after 3m59s [id=0316-143233-vldng4wr
+]
+databricks_job.run_saving: Creating...
+databricks_job.run_preconfig: Creating...
+databricks_job.run_saving: Creation complete after 1s [id=1063074396808775]
+databricks_job.run_preconfig: Creation complete after 1s [id=552003478637995]
+╷
+│ Warning: Argument is deprecated
+│
+│   with azurerm_storage_container.data,
+│   on main.tf line 66, in resource "azurerm_storage_container" "data":
+│   66:   storage_account_name  = azurerm_storage_account.Azure_Spark_SQL_storag
+e.name
+│
+│ the `storage_account_name` property has been deprecated in favour of
+│ `storage_account_id` and will be removed in version 5.0 of the Provider.
+╵
+
+Apply complete! Resources: 5 added, 0 changed, 2 destroyed.
+
+Outputs:
+
+job_ids = {
+  "preconfig" = "552003478637995"
+  "saving" = "1063074396808775"
+}
+make: Leaving directory 'C:/data_eng/h�zi/2'
+
+Process finished with exit code 0
+```
+## You can see the notebooks preconfig and saving created by the terraform:
+
+![wbs](https://github.com/user-attachments/assets/346088c2-139a-453b-826e-6f614663c2ea)
+
+## And the cluster created by the terrafom, too:
+
+![cluster](https://github.com/user-attachments/assets/570e6a6f-8489-4b5c-bf92-cb507d92a3eb)
+
+## And the jobs, which was also created:
+
+![1st_job_WF_screenshot](https://github.com/user-attachments/assets/ca685dd2-1faa-49a6-8ab9-52a1b7bc36a3)
+
+## All set for the running of the jobs, I run them via cmd, with databricks jobs run-now --job-id <job-id>:
+
+![manually_jobs](https://github.com/user-attachments/assets/be0cb982-6f4e-414f-860e-a8c66ce6b2eb)
+
+## As you can see in the main.tf, my approach was to solve the task with 2 notebooks, the first's task are to executing the creation of delta tables and saving the intermediate datas
+## The second's are to execute all the queries, saving the results in dataframes and finally saving them in partitioned parquet format.
+
+## Below you can see the notebook preconfig notebook:
+```python
+# Azure Storage settings
+input_storage_account = ""
+output_storage_account = ""
+input_container = "hw2"
+output_container = "data"
+
+# Setting up Storage account keys
+spark.conf.set(
+    f"fs.azure.account.key.{input_storage_account}.blob.core.windows.net",
+    dbutils.secrets.get(scope="hw2secret", key="AZURE_STORAGE_ACCOUNT_KEY_SOURCE"))
+
+spark.conf.set(
+    f"fs.azure.account.key.{output_storage_account}.blob.core.windows.net",
+    dbutils.secrets.get(scope="hw2secret", key="STORAGE_FINAL"))
+
+# Create database if it doesn't exist
+spark.sql("CREATE DATABASE IF NOT EXISTS mydatabase")
+
+# Read Expedia data from the source container and save it in Delta format to the data output container 
+expedia_df = spark.read.format("avro").load(f"wasbs://{input_container}@{input_storage_account}.blob.core.windows.net/expedia/")
+
+expedia_df.write.format("delta").mode("overwrite") \
+    .option("overwriteSchema", "true") \
+    .save(f"wasbs://{output_container}@{output_storage_account}.blob.core.windows.net/delta/expedia/")
+
+# Register the Expedia Delta table in the Metastore
+spark.sql("DROP TABLE IF EXISTS mydatabase.expedia")
+spark.sql(f"""
+    CREATE TABLE mydatabase.expedia
+    USING DELTA
+    LOCATION 'wasbs://{output_container}@{output_storage_account}.blob.core.windows.net/delta/expedia/'
+""")
+
+# Read Hotel-Weather data from the source container and save it in Delta format to the data output container, also partitioning is applied
+hotel_weather_df = spark.read.format("parquet").load(f"wasbs://{input_container}@{input_storage_account}.blob.core.windows.net/hotel-weather/hotel-weather/")
+
+hotel_weather_df.write.format("delta").mode("overwrite") \
+    .partitionBy("year", "month", "day") \
+    .option("overwriteSchema", "true") \
+    .save(f"wasbs://{output_container}@{output_storage_account}.blob.core.windows.net/delta/hotel-weather/")
+
+# Register the Hotel-Weather Delta table in the Metastore
+spark.sql("DROP TABLE IF EXISTS mydatabase.hotel_weather")
+spark.sql(f"""
+    CREATE TABLE mydatabase.hotel_weather
+    USING DELTA
+    LOCATION 'wasbs://{output_container}@{output_storage_account}.blob.core.windows.net/delta/hotel-weather/'
+""")
+
+# Refresh cache to see the most up-to-date data
+spark.sql("REFRESH TABLE mydatabase.expedia")
+spark.sql("REFRESH TABLE mydatabase.hotel_weather")
+
+#Due to the same column name in the two dataframes, we need to rename the column
+hotel_weather_df = hotel_weather_df.withColumnRenamed("id", "accomodation_id")
+# Join the Expedia and Hotel Weather data
+joined_df = expedia_df.join(hotel_weather_df, expedia_df.hotel_id == hotel_weather_df.accomodation_id, "left")
+
+# Save the intermediate DataFrame partitioned
+joined_df.write.format("parquet") \
+    .mode("overwrite") \
+    .partitionBy("year", "month", "day") \
+    .save(f"wasbs://{output_container}@{output_storage_account}.blob.core.windows.net/joined_data/")
+
+```
+## Below you can see the processing of the first notebook, named preparation:
+
+![1ST_JOB_RUNNING](https://github.com/user-attachments/assets/81582498-9e8a-4b3b-9b73-476a51f718b5)
+
+## Here is a screenshot from the Spark UI:
+
+![JOB_SPARK_UI](https://github.com/user-attachments/assets/bec9c4dd-7a3d-4e41-a9a0-61370680d408)
+
+## And about the completed job:
+
+![1ST_JIB_COMPLETE](https://github.com/user-attachments/assets/0a6bca65-cc40-41f5-857e-2bf010bda6c4)
+
+## Screenshot about the created delta tables:
+
+![1ST_JOB_DELTA_TABLES](https://github.com/user-attachments/assets/e93ac5e3-77c5-4f75-9345-e572f98ee04f)
+
+## Below you can see the second notebook, called saving:
+
+```python
+# Azure Storage settings
+input_storage_account = ""
+output_storage_account = ""
+input_container = "hw2"
+output_container = "data"
+
+spark.conf.set(
+    f"fs.azure.account.key.{output_storage_account}.blob.core.windows.net",
+    dbutils.secrets.get(scope="hw2secret", key="STORAGE_FINAL"))
+	
+df_first = spark.sql("""
+	SELECT 
+    address,    -- Select the hotel address.
+    year,       -- Select the year from the data.
+    month,      -- Select the month from the data.
+    -- Calculate the temperature difference within each group:
+    --   1. Find the maximum average temperature (avg_tmpr_c) in the group.
+    --   2. Find the minimum average temperature (avg_tmpr_c) in the group.
+    --   3. Compute the absolute difference between these values.
+    --   4. Round the result to 2 decimal places and alias it as 'temp_diff'.
+    ROUND(ABS(MAX(avg_tmpr_c) - MIN(avg_tmpr_c)), 2) AS temp_diff
+	FROM mydatabase.hotel_weather   -- Data is sourced from the hotel_weather table.
+	GROUP BY address, year, month    -- Group the records by hotel address, year, and month.
+	ORDER BY temp_diff DESC          -- Order the groups by temperature difference in descending order.
+	LIMIT 10;                       -- Limit the result to the top 10 groups with the largest temperature differences.
+""")
+
+df_first.write.format("parquet") \
+    .mode("overwrite") \
+    .partitionBy("year", "month") \
+    .save(f"wasbs://{output_container}@{output_storage_account}.blob.core.windows.net/datamart/1/")
+	
+df_second = spark.sql("""
+	WITH exploded_dates AS (
+		SELECT
+			ex.hotel_id,
+			hw.address,
+			explode(sequence(
+				CAST(ex.srch_ci AS DATE), 
+				CAST(ex.srch_co AS DATE) - INTERVAL 1 DAY, 
+				interval 1 day)) AS visit_date
+		FROM mydatabase.expedia ex
+		LEFT JOIN mydatabase.hotel_weather hw
+		ON ex.hotel_id = hw.id
+		WHERE CAST(ex.srch_ci AS DATE) < CAST(ex.srch_co AS DATE)
+		AND hw.address IS NOT NULL
+	),
+	monthly_visits AS (
+		SELECT
+			address,
+			YEAR(visit_date) AS year,
+			MONTH(visit_date) AS month,
+			COUNT(*) AS visits_count
+		FROM exploded_dates
+		GROUP BY address, YEAR(visit_date), MONTH(visit_date)
+	),
+	ranked_hotels AS (
+		SELECT *,
+			DENSE_RANK() OVER (PARTITION BY year, month ORDER BY visits_count DESC) AS rank
+		FROM monthly_visits
+	)
+	SELECT * FROM ranked_hotels WHERE rank <= 10;
+""")
+df_second.write.format("parquet") \
+    .mode("overwrite") \
+    .partitionBy("year", "month") \
+    .save(f"wasbs://{output_container}@{output_storage_account}.blob.core.windows.net/datamart/2/")
+	
+
+df_third = spark.sql("""
+	WITH exploded_dates AS (
+		SELECT
+			ex.id AS booking_id,
+			ex.hotel_id,
+			ex.srch_ci,
+			ex.srch_co,
+			explode(sequence(
+				CAST(ex.srch_ci AS DATE), 
+				CAST(ex.srch_co AS DATE) - INTERVAL 1 DAY,
+				INTERVAL 1 DAY
+			)) AS visit_date
+		FROM mydatabase.expedia ex
+		WHERE DATEDIFF(ex.srch_co, ex.srch_ci) BETWEEN 7 AND 30
+		AND ex.srch_co > ex.srch_ci
+	),
+	joined_weather AS (
+		SELECT 
+			ed.booking_id,
+			ed.hotel_id,
+			ed.visit_date,
+			hw.avg_tmpr_c,
+			hw.address
+		FROM exploded_dates ed
+		LEFT JOIN mydatabase.hotel_weather hw
+		ON ed.hotel_id = hw.id 
+			AND CAST(hw.wthr_date AS DATE) = ed.visit_date
+		WHERE hw.avg_tmpr_c IS NOT NULL
+	),
+	windowed_temps AS (
+		SELECT
+			booking_id,
+			hotel_id,
+			address,
+			visit_date,
+			avg_tmpr_c,
+			FIRST_VALUE(avg_tmpr_c) OVER (PARTITION BY booking_id ORDER BY visit_date) AS first_temp,
+			LAST_VALUE(avg_tmpr_c) OVER (PARTITION BY booking_id ORDER BY visit_date 
+				ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS last_temp
+		FROM joined_weather
+	),
+	temp_calculations AS (
+		SELECT
+			booking_id,
+			hotel_id,
+			address,
+			MIN(visit_date) AS first_day,
+			MAX(visit_date) AS last_day,
+			ROUND(last_temp - first_temp, 2) AS temp_trend,
+			ROUND(AVG(avg_tmpr_c), 2) AS avg_temperature
+		FROM windowed_temps
+		GROUP BY booking_id, hotel_id, address, first_temp, last_temp
+	)
+	SELECT *
+	FROM temp_calculations
+	WHERE temp_trend IS NOT NULL
+	AND avg_temperature IS NOT NULL
+	AND DATEDIFF(last_day, first_day) >= 7
+	ORDER BY ABS(temp_trend) DESC;
+""")
+
+df_third.write.format("parquet") \
+    .mode("overwrite") \
+    .partitionBy("first_day", "last_day") \
+    .save(f"wasbs://{output_container}@{output_storage_account}.blob.core.windows.net/datamart/3/")
+```
+## Here you can see the successful second job:
+
+![2nd_job_succ](https://github.com/user-attachments/assets/8bb1542e-203b-46c1-ab57-f748b83a48ad)
+
+## The created partitioned parquet files in the destination data container:
+
+![job_result_container](https://github.com/user-attachments/assets/3b30cf0b-8a83-4cf4-a51b-90a47df9db29)
+
+## You can see the screenshots about the jobs and runs:
+
+![all_the_jobs](https://github.com/user-attachments/assets/d7bb6a43-0f31-4010-ad54-0eec700a2cef)
+
+![all_jobs](https://github.com/user-attachments/assets/c3297dac-b558-426c-a388-40a5514cae58)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
