@@ -1,4 +1,4 @@
-![1ST_JOB_DELTA_TABLES](https://github.com/user-attachments/assets/fad40838-d2bc-444d-8bc0-329e5289e294)![1ST_JOB_DELTA_TABLES](https://github.com/user-attachments/assets/ddab335e-03ac-45f3-aedc-9e663c316a71)![1ST_JOB_RUNNING](https://github.com/user-attachments/assets/4547a2a4-fc50-46a7-a2c2-54243dda086f)# Spark SQL Homework
+# Spark SQL Homework
 
 ### Balázs Mikes
 
