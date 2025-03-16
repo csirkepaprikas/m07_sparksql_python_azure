@@ -2057,7 +2057,8 @@ joined_df.write.format("parquet") \
 
 ## And about the completed job:
 
-![1ST_JIB_COMPLETE](https://github.com/user-attachments/assets/0a6bca65-cc40-41f5-857e-2bf010bda6c4)
+![1ST_JIB_COMPLETE](https://github.com/user-attachments/assets/8a0e6a37-9b6c-42cb-b08d-683b72bc1cbc)
+
 
 ## Screenshot about the created delta tables:
 
