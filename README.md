@@ -1230,67 +1230,8 @@ only showing top 10 rows
 
 ![third_saved](https://github.com/user-attachments/assets/4e5a944c-f740-42d6-bde0-7705bc5f62f3)
 
-## Then headed to the CI/CD task. I chose the GitHub + terraform combination with Azure CLI authentication.
-## Here you can see the terraform.yml workflow file's content:
-```python
-name: Terraform Deployment
-
-on:
-  push:
-    branches:
-      - main  
-  pull_request:
-    branches:
-      - main
-
-permissions:
-  id-token: write
-  contents: read
-  
-jobs:
-  terraform:
-    name: "Terraform Apply"
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-
-    - name: Set up Terraform
-      uses: hashicorp/setup-terraform@v2
-      with:
-        terraform_version: 1.5.7  
-
-    - name: Initialize Terraform
-      run: terraform init
-      working-directory: terraform
-      env:
-        ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-        ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-        ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-        ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-
-    - name: Terraform Plan
-      run: terraform plan -lock=false
-      working-directory: terraform
-      env:
-        ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-        ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-        ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-        ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-        SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-        TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-        AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-        CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-
-    - name: Terraform Apply
-      if: github.ref == 'refs/heads/main'
-      run: terraform apply -auto-approve
-      env:
-        ARM_ACCESS_KEY: ${{ secrets.ARM_ACCESS_KEY }}
-        DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
-```
-## The main.tf file's content:
+## Then headed to the CI/CD task. The concept is implement it locally with terraform and a Makefile.
+## I made  a main.tf file:
 ```python
 terraform {
   required_providers {
@@ -1305,8 +1246,8 @@ terraform {
   }
 
   backend "azurerm" {
-    resource_group_name  = "rg-development-westeurope-6o"
-    storage_account_name = "developmentwesteurope6o"
+    resource_group_name  = ""
+    storage_account_name = ""
     container_name       = "tfstate"
     key                  = "terraform.tfstate"
   }
@@ -1329,10 +1270,9 @@ provider "databricks" {
 resource "databricks_notebook" "Azure_Spark_SQL" {
   path     = "/Users/balage330@gmail.com/Azure_Spark_SQL"
   language = "SQL"
-  source   = ""
 }
 
-resource "databricks_cluster" "example" {
+resource "databricks_cluster" "cicd" {
   cluster_name           = "Azure_Spark_SQL_cluster"
   spark_version          = "7.3.x-scala2.12"
   node_type_id           = "Standard_DS3_v2"
@@ -1373,41 +1313,291 @@ resource "databricks_job" "run_hotel_weather_query" {
   }
 }
 ```
-## Secrets were created in GitHub for the terraform operations:
-
-![github_secrets](https://github.com/user-attachments/assets/45474ebc-213b-407e-b335-170ffde02676)
-
-## The variables.tf:
+## And a variables.tf file:
 ```python
-variable "AZURE_SUBSCRIPTION_ID" {
-  type = string
-}
+variable "AZURE_SUBSCRIPTION_ID" {}
+variable "AZURE_TENANT_ID" {}
+variable "AZURE_CLIENT_ID" {}
+variable "AZURE_CLIENT_SECRET" {}
+variable "DATABRICKS_HOST" {}
+variable "DATABRICKS_TOKEN" {}
 
-variable "AZURE_TENANT_ID" {
-  type = string
-}
-
-variable "AZURE_CLIENT_ID" {
-  type = string
-}
-
-variable "AZURE_CLIENT_SECRET" {
-  type = string
-}
-
-variable "DATABRICKS_HOST" {
-  type = string
-}
-
-variable "DATABRICKS_TOKEN" {
-  type = string
-}
+variable "STORAGE_ACCOUNT_NAME" {}
+variable "RESOURCE_GROUP_NAME" {}
 ```
-## The progress of the terraform deployment, which stalls unfortunately
+## And terraform.tfvars, where the secrets are defined.
+## Here you can see the Makefile:
+```python
+# Terraform initialization
+init:
+	@echo "Initializing Terraform..."
+	terraform init
 
-![tf_depl](https://github.com/user-attachments/assets/42e84697-a10e-44b0-8a47-190d79849c00)
+# Terraform plan creation
+plan:
+	@echo "Generating Terraform plan..."
+	terraform plan -var-file=terraform.tfvars -lock=false
 
+# Terraform apply
+apply:
+	@echo "Applying Terraform changes..."
+	terraform apply -var-file=terraform.tfvars -auto-approve
 
+# Terraform deletion
+destroy:
+	@echo "Destroying Terraform infrastructure..."
+	terraform destroy -auto-approve
+```
+## The result of the init:
+```python
+C:\ProgramData\chocolatey\bin\make.exe -f C:/data_eng/házi/2/Makefile -C C:\data_eng\házi\2 init
+make: Entering directory 'C:/data_eng/hßzi/2'
+"Initializing Terraform..."
+terraform init
+Initializing the backend...
+Initializing provider plugins...
+- Reusing previous version of hashicorp/azurerm from the dependency lock file
+- Reusing previous version of databricks/databricks from the dependency lock fil
+e
+- Using previously-installed hashicorp/azurerm v4.23.0
+- Using previously-installed databricks/databricks v1.70.0
 
+Terraform has been successfully initialized!
 
+You may now begin working with Terraform. Try running "terraform plan" to see
+any changes that are required for your infrastructure. All Terraform commands
+should now work.
 
+If you ever set or change modules or backend configuration for Terraform,
+rerun this command to reinitialize your working directory. If you forget, other
+commands will detect it and remind you to do so if necessary.
+make: Leaving directory 'C:/data_eng/h�zi/2'
+
+Process finished with exit code 0
+```
+## The result of the plan:
+```python
+C:\ProgramData\chocolatey\bin\make.exe -f C:/data_eng/házi/2/Makefile -C C:\data_eng\házi\2 plan
+make: Entering directory 'C:/data_eng/hßzi/2'
+"Generating Terraform plan..."
+terraform plan -var-file=terraform.tfvars -lock=false
+
+Terraform used the selected providers to generate the following execution plan.
+Resource actions are indicated with the following symbols:
+  + create
+
+Terraform will perform the following actions:
+
+  # azurerm_storage_account.Azure_Spark_SQL_storage will be created
+  + resource "azurerm_storage_account" "Azure_Spark_SQL_storage" {
+      + access_tier                        = (known after apply)
+      + account_kind                       = "StorageV2"
+      + account_replication_type           = "LRS"
+      + account_tier                       = "Standard"
+      + allow_nested_items_to_be_public    = true
+      + cross_tenant_replication_enabled   = false
+      + default_to_oauth_authentication    = false
+      + dns_endpoint_type                  = "Standard"
+      + https_traffic_only_enabled         = true
+      + id                                 = (known after apply)
+      + infrastructure_encryption_enabled  = false
+      + is_hns_enabled                     = false
+      + large_file_share_enabled           = (known after apply)
+      + local_user_enabled                 = true
+      + location                           = "westeurope"
+      + min_tls_version                    = "TLS1_2"
+      + name                               = "developmentwesteurope6o"
+      + nfsv3_enabled                      = false
+      + primary_access_key                 = (sensitive value)
+      + primary_blob_connection_string     = (sensitive value)
+      + primary_blob_endpoint              = (known after apply)
+      + primary_blob_host                  = (known after apply)
+      + primary_blob_internet_endpoint     = (known after apply)
+      + primary_blob_internet_host         = (known after apply)
+      + primary_blob_microsoft_endpoint    = (known after apply)
+      + primary_blob_microsoft_host        = (known after apply)
+      + primary_connection_string          = (sensitive value)
+      + primary_dfs_endpoint               = (known after apply)
+      + primary_dfs_host                   = (known after apply)
+      + primary_dfs_internet_endpoint      = (known after apply)
+      + primary_dfs_internet_host          = (known after apply)
+      + primary_dfs_microsoft_endpoint     = (known after apply)
+      + primary_dfs_microsoft_host         = (known after apply)
+      + primary_file_endpoint              = (known after apply)
+      + primary_file_host                  = (known after apply)
+      + primary_file_internet_endpoint     = (known after apply)
+      + primary_file_internet_host         = (known after apply)
+      + primary_file_microsoft_endpoint    = (known after apply)
+      + primary_file_microsoft_host        = (known after apply)
+      + primary_location                   = (known after apply)
+      + primary_queue_endpoint             = (known after apply)
+      + primary_queue_host                 = (known after apply)
+      + primary_queue_microsoft_endpoint   = (known after apply)
+      + primary_queue_microsoft_host       = (known after apply)
+      + primary_table_endpoint             = (known after apply)
+      + primary_table_host                 = (known after apply)
+      + primary_table_microsoft_endpoint   = (known after apply)
+      + primary_table_microsoft_host       = (known after apply)
+      + primary_web_endpoint               = (known after apply)
+      + primary_web_host                   = (known after apply)
+      + primary_web_internet_endpoint      = (known after apply)
+      + primary_web_internet_host          = (known after apply)
+      + primary_web_microsoft_endpoint     = (known after apply)
+      + primary_web_microsoft_host         = (known after apply)
+      + public_network_access_enabled      = true
+      + queue_encryption_key_type          = "Service"
+      + resource_group_name                = ""
+      + secondary_access_key               = (sensitive value)
+      + secondary_blob_connection_string   = (sensitive value)
+      + secondary_blob_endpoint            = (known after apply)
+      + secondary_blob_host                = (known after apply)
+      + secondary_blob_internet_endpoint   = (known after apply)
+      + secondary_blob_internet_host       = (known after apply)
+      + secondary_blob_microsoft_endpoint  = (known after apply)
+      + secondary_blob_microsoft_host      = (known after apply)
+      + secondary_connection_string        = (sensitive value)
+      + secondary_dfs_endpoint             = (known after apply)
+      + secondary_dfs_host                 = (known after apply)
+      + secondary_dfs_internet_endpoint    = (known after apply)
+      + secondary_dfs_internet_host        = (known after apply)
+      + secondary_dfs_microsoft_endpoint   = (known after apply)
+      + secondary_dfs_microsoft_host       = (known after apply)
+      + secondary_file_endpoint            = (known after apply)
+      + secondary_file_host                = (known after apply)
+      + secondary_file_internet_endpoint   = (known after apply)
+      + secondary_file_internet_host       = (known after apply)
+      + secondary_file_microsoft_endpoint  = (known after apply)
+      + secondary_file_microsoft_host      = (known after apply)
+      + secondary_location                 = (known after apply)
+      + secondary_queue_endpoint           = (known after apply)
+      + secondary_queue_host               = (known after apply)
+      + secondary_queue_microsoft_endpoint = (known after apply)
+      + secondary_queue_microsoft_host     = (known after apply)
+      + secondary_table_endpoint           = (known after apply)
+      + secondary_table_host               = (known after apply)
+      + secondary_table_microsoft_endpoint = (known after apply)
+      + secondary_table_microsoft_host     = (known after apply)
+      + secondary_web_endpoint             = (known after apply)
+      + secondary_web_host                 = (known after apply)
+      + secondary_web_internet_endpoint    = (known after apply)
+      + secondary_web_internet_host        = (known after apply)
+      + secondary_web_microsoft_endpoint   = (known after apply)
+      + secondary_web_microsoft_host       = (known after apply)
+      + sftp_enabled                       = false
+      + shared_access_key_enabled          = true
+      + table_encryption_key_type          = "Service"
+
+      + blob_properties (known after apply)
+
+      + network_rules (known after apply)
+
+      + queue_properties (known after apply)
+
+      + routing (known after apply)
+
+      + share_properties (known after apply)
+
+      + static_website (known after apply)
+    }
+
+  # azurerm_storage_container.data will be created
+  + resource "azurerm_storage_container" "data" {
+      + container_access_type             = "container"
+      + default_encryption_scope          = (known after apply)
+      + encryption_scope_override_enabled = true
+      + has_immutability_policy           = (known after apply)
+      + has_legal_hold                    = (known after apply)
+      + id                                = (known after apply)
+      + metadata                          = (known after apply)
+      + name                              = "data"
+      + resource_manager_id               = (known after apply)
+      + storage_account_name              = ""
+    }
+
+  # databricks_cluster.cicd will be created
+  + resource "databricks_cluster" "cicd" {
+      + autotermination_minutes      = 30
+      + cluster_id                   = (known after apply)
+      + cluster_name                 = "Azure_Spark_SQL_cluster"
+      + default_tags                 = (known after apply)
+      + driver_instance_pool_id      = (known after apply)
+      + driver_node_type_id          = (known after apply)
+      + enable_elastic_disk          = (known after apply)
+      + enable_local_disk_encryption = (known after apply)
+      + id                           = (known after apply)
+      + node_type_id                 = "Standard_DS3_v2"
+      + num_workers                  = 1
+      + spark_version                = "7.3.x-scala2.12"
+      + state                        = (known after apply)
+      + url                          = (known after apply)
+    }
+
+  # databricks_job.run_hotel_weather_query will be created
+  + resource "databricks_job" "run_hotel_weather_query" {
+      + always_running      = false
+      + control_run_state   = false
+      + format              = (known after apply)
+      + id                  = (known after apply)
+      + max_concurrent_runs = 1
+      + name                = "run_hotel_weather_query"
+      + url                 = (known after apply)
+
+      + new_cluster {
+          + driver_instance_pool_id      = (known after apply)
+          + driver_node_type_id          = (known after apply)
+          + enable_elastic_disk          = (known after apply)
+          + enable_local_disk_encryption = (known after apply)
+          + node_type_id                 = "Standard_DS3_v2"
+          + num_workers                  = 2
+          + spark_version                = "15.4.x-scala2.12"
+        }
+
+      + notebook_task {
+          + notebook_path = "/Users/balage330@gmail.com/Azure_Spark_SQL"
+        }
+
+      + run_as (known after apply)
+
+      + schedule {
+          + pause_status           = "UNPAUSED"
+          + quartz_cron_expression = "0 0 1 * ? *"
+          + timezone_id            = "UTC"
+        }
+    }
+
+  # databricks_notebook.Azure_Spark_SQL will be created
+  + resource "databricks_notebook" "Azure_Spark_SQL" {
+      + format         = (known after apply)
+      + id             = (known after apply)
+      + language       = "SQL"
+      + md5            = "different"
+      + object_id      = (known after apply)
+      + object_type    = (known after apply)
+      + path           = "/Users/balage330@gmail.com/Azure_Spark_SQL"
+      + url            = (known after apply)
+      + workspace_path = (known after apply)
+    }
+
+Plan: 5 to add, 0 to change, 0 to destroy.
+╷
+│ Warning: Argument is deprecated
+│
+│   with azurerm_storage_container.data,
+│   on main.tf line 58, in resource "azurerm_storage_container" "data":
+│   58:   storage_account_name  = azurerm_storage_account.Azure_Spark_SQL_storag
+e.name
+│
+│ the `storage_account_name` property has been deprecated in favour of
+│ `storage_account_id` and will be removed in version 5.0 of the Provider.
+│
+│ (and one more similar warning elsewhere)
+╵
+
+───────────────────────────────────────────────────────────────────────────────
+
+Note: You didn't use the -out option to save this plan, so Terraform can't
+guarantee to take exactly these actions if you run "terraform apply" now.
+make: Leaving directory 'C:/data_eng/h�zi/2'
+
+Process finished with exit code 0
+```
